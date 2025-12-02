@@ -26,7 +26,7 @@ from .config import settings
 from .database import Base, engine, SessionLocal
 from .utils.logging_config import setup_logging
 from . import models
-from .services.telegram_bot import telegram_bot_service # Import Bot Service
+
 
 # Routers
 from .auth import router as auth_router, get_password_hash
@@ -114,11 +114,7 @@ def on_startup():
     finally:
         db.close()
 
-    # Khởi động Telegram Bot (Polling Mode)
-    try:
-        telegram_bot_service.start()
-    except Exception as e:
-        logging.error(f"Failed to start Telegram Bot: {e}")
+
 
     # Job cho Khách dài hạn
     def create_daily_guest_entries():
@@ -222,11 +218,7 @@ def on_shutdown():
     except Exception as e:
         logging.error(f"Error shutting down scheduler: {e}", exc_info=True)
 
-    # Dừng Telegram Bot
-    try:
-        telegram_bot_service.stop()
-    except Exception as e:
-        logging.error(f"Error stopping Telegram Bot: {e}")
+
 
 @app.get("/")
 def read_root():
