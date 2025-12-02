@@ -1,40 +1,6 @@
 ```
 🛑 SYSTEM INSTRUCTION & TEMPLATE
 LƯU Ý QUAN TRỌNG CHO AI VÀ DEVELOPER:
-Khi đọc file này để phân tích hoặc thêm nhật ký lỗi mới, BẮT BUỘNG phải tuân thủ cấu trúc Template dưới đây. Không tự ý thay đổi định dạng heading hoặc cấu trúc mục lục để đảm bảo tính đồng bộ cho toàn bộ dự án.
-
-📋 Template Mẫu (Copy & Paste khi thêm mới)
-```markdown
-# [DD/MM/YYYY] [Icon] [Tên Lỗi / Vấn Đề Chính]
-**Version:** vX.Y.Z | **Tags:** #bugfix, #backend/frontend, #severity
-
-## 1. Tổng quan (Overview)
-* **Mục tiêu:** [Mô tả ngắn gọn lỗi và mục tiêu sửa lỗi]
-* **Trạng thái:** ✅ Đã sửa / 🚧 Đang xử lý / ❌ Chưa giải quyết
-
-## 2. Vấn đề & Triệu chứng (Problem & Symptoms)
-* **Triệu chứng:**
-    * [Mô tả hiện tượng lỗi]
-* **Nguyên nhân gốc rễ (Root Cause):**
-    * [Giải thích kỹ thuật tại sao lỗi xảy ra]
-
-## 3. Giải pháp Kỹ thuật (Technical Solution)
-* **Backend (`path/to/file.py`):**
-    * [Mô tả thay đổi logic]
-* **Frontend (`path/to/file.vue`):**
-    * [Mô tả thay đổi UI/UX]
-* **Database:** [Thay đổi Schema/Migration nếu có]
-
-## 4. Kết quả & Cập nhật (Impact & Metrics)
-* **Files Modified:** `file_A.py`, `file_B.vue`, ...
-* **Kết quả:** [Lỗi đã được khắc phục như thế nào?]
-
-## 5. Bài học & Ghi chú (Lessons Learned)
-* [Kinh nghiệm rút ra]
-```
-```
-🛑 SYSTEM INSTRUCTION & TEMPLATE
-LƯU Ý QUAN TRỌNG CHO AI VÀ DEVELOPER:
 Khi đọc file này để phân tích hoặc thêm nhật ký lỗi mới, BẮT BUỘC phải tuân thủ cấu trúc Template dưới đây. Không tự ý thay đổi định dạng heading hoặc cấu trúc mục lục để đảm bảo tính đồng bộ cho toàn bộ dự án.
 
 📋 Template Mẫu (Copy & Paste khi thêm mới)
@@ -71,7 +37,8 @@ Khi đọc file này để phân tích hoặc thêm nhật ký lỗi mới, BẮ
 
 # Mục Lục (Table of Contents)
 
-1.  [02/12/2025 - Timezone Discrepancy in Guard Gate & Telegram](#02122025-timezone-discrepancy)
+1.  [03/12/2025 - Google Form Integration Fixes (Timezone & Schema)](#03122025-google-form-integration-fixes)
+2.  [02/12/2025 - Timezone Discrepancy in Guard Gate & Telegram](#02122025-timezone-discrepancy)
 2.  [02/12/2025 - ReferenceError in RegisterGuest](#02122025-reference-error-register-guest)
 3.  [02/12/2025 - Syntax Error & Duplicate Identifier in RegisterGuest](#02122025-syntax-error--duplicate-identifier)
 4.  [02/12/2025 - Telegram Bot Conflict & Duplicate Registration](#02122025-telegram-bot-conflict--duplicate-registration)
@@ -80,6 +47,37 @@ Khi đọc file này để phân tích hoặc thêm nhật ký lỗi mới, BẮ
 7.  [29/11/2025 - White Screen & Token Expiry](#29112025-white-screen--token-expiry)
 8.  [28/11/2025 - Task List Loading & Image Upload Failures](#28112025-task-list-loading--image-upload-failures)
 9.  [21-23/11/2025 - Database Schema Mismatch](#21-23112025-database-schema-mismatch)
+
+---
+
+# <a id="03122025-google-form-integration-fixes"></a> 03/12/2025 🐛 Google Form Integration Fixes (Timezone & Schema)
+**Version:** v1.14.1 | **Tags:** #bugfix, #backend, #timezone, #database
+
+## 1. Tổng quan (Overview)
+* **Mục tiêu:** Khắc phục các lỗi phát sinh khi tích hợp Google Form: sai lệch múi giờ dự kiến và lỗi schema database.
+* **Trạng thái:** ✅ Đã sửa
+
+## 2. Vấn đề & Triệu chứng (Problem & Symptoms)
+* **Triệu chứng 1 (Timezone):** Thời gian "Dự kiến" của khách từ Google Form bị lệch +7 tiếng so với thực tế (do Google Sheet trả về UTC/Local time không khớp).
+* **Triệu chứng 2 (Schema):** Lỗi `TypeError: 'source' is an invalid keyword argument` khi tạo Guest.
+* **Triệu chứng 3 (Notification):** Khách mới từ Google Form không bắn thông báo lên Telegram.
+
+## 3. Giải pháp Kỹ thuật (Technical Solution)
+* **Backend (`services/form_sync_service.py`):**
+    * **Timezone Fix:** Áp dụng công thức `Estimated = Timestamp + 1h - 7h` để bù trừ độ lệch múi giờ và cộng thêm buffer time.
+    * **Schema Fix:** Loại bỏ trường `source="google_form"` khỏi câu lệnh insert vì Database chưa có cột này.
+    * **Notification Fix:** Import và gọi hàm `run_pending_list_notification` + `send_event_to_archive_background` ngay sau khi sync thành công.
+
+## 4. Kết quả & Cập nhật (Impact & Metrics)
+* **Files Modified:** `form_sync_service.py`.
+* **Kết quả:**
+    * Thời gian dự kiến hiển thị chính xác.
+    * Không còn lỗi crash khi sync.
+    * Telegram nhận thông báo ngay lập tức khi có khách điền form.
+
+## 5. Bài học & Ghi chú (Lessons Learned)
+* Khi làm việc với datetime từ nguồn bên ngoài (như Google Sheet), luôn phải kiểm tra kỹ múi giờ (Timezone Aware vs Naive).
+* Kiểm tra kỹ Model Definition trước khi thêm trường mới vào code insert.
 
 ---
 

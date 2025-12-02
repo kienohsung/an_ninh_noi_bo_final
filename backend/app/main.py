@@ -26,7 +26,7 @@ from .config import settings
 from .database import Base, engine, SessionLocal
 from .utils.logging_config import setup_logging
 from . import models
-
+from .services.form_sync_service import sync_google_form_registrations # Import Form Sync Service
 
 # Routers
 from .auth import router as auth_router, get_password_hash
@@ -201,6 +201,17 @@ def on_startup():
             max_instances=1,
             misfire_grace_time=30,
         )
+        # Job đồng bộ Google Form (5 giây/lần - Testing Mode)
+        sched.add_job(
+            sync_google_form_registrations,
+            trigger=IntervalTrigger(seconds=30),
+            id="sync_google_form_job",
+            name="Sync guest registrations from Google Form",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=10,
+        )
         sched.start()
         app.state.scheduler = sched
         logging.info(f"[long_term] Scheduler started: every 60 minutes (TZ={settings.TZ}).")
@@ -223,3 +234,4 @@ def on_shutdown():
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Local Security API", "version": app.version}
+# Trigger reload

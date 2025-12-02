@@ -12,7 +12,7 @@ from googleapiclient.errors import HttpError
 
 from ..config import settings
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 TZ = pytz.timezone(settings.TZ)
 logger = logging.getLogger("[GSheet Reader]")
 
@@ -50,6 +50,71 @@ def read_sheet_all(service, sheet_id: str, sheet_name: str) -> List[List]:
     except Exception as e:
         logger.error(f"An unexpected error occurred while reading sheet '{sheet_name}': {e}")
         return []
+
+def read_form_responses(service, sheet_id: str) -> List[List]:
+    """
+    Reads form responses from 'Câu trả lời biểu mẫu 1'.
+    Uses valueRenderOption='FORMATTED_VALUE' to ensure consistent date strings.
+    """
+    sheet_name = "Câu trả lời biểu mẫu 1"
+    logger.info(f"Reading form responses from '{sheet_name}'...")
+    try:
+        range_name = f"'{sheet_name}'!A2:H" # Read from A2 to H (skipping header)
+        # Use FORMATTED_VALUE to get strings for dates/times
+        resp = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, 
+            range=range_name, 
+            valueRenderOption='FORMATTED_VALUE'
+        ).execute()
+        values = resp.get("values", [])
+        logger.info(f"Successfully read {len(values)} rows from '{sheet_name}'.")
+        return values
+    except HttpError as e:
+        logger.error(f"API Error reading form responses: {e.reason}")
+        return []
+    except Exception as e:
+        logger.error(f"Unexpected error reading form responses: {e}")
+        return []
+
+def batch_update_status(service, sheet_id: str, updates: List[Tuple[int, str]]):
+    """
+    Batch updates the SYNC_STATUS column (Column H) for multiple rows.
+    
+    Args:
+        service: Google Sheets service object
+        sheet_id: ID of the spreadsheet
+        updates: List of tuples (row_index, status_value). 
+                 row_index should be the Excel row number (1-based).
+    """
+    if not updates:
+        return
+
+    sheet_name = "Câu trả lời biểu mẫu 1"
+    data = []
+    
+    for row_idx, status in updates:
+        # Construct range for column H at specific row
+        # Example: 'Câu trả lời biểu mẫu 1'!H5
+        range_name = f"'{sheet_name}'!H{row_idx}"
+        data.append({
+            "range": range_name,
+            "values": [[status]]
+        })
+
+    body = {
+        "valueInputOption": "RAW",
+        "data": data
+    }
+
+    try:
+        logger.info(f"Batch updating {len(updates)} rows in '{sheet_name}'...")
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=sheet_id, 
+            body=body
+        ).execute()
+        logger.info("Batch update completed successfully.")
+    except Exception as e:
+        logger.error(f"Failed to batch update status: {e}")
 
 def parse_rows(values: List[List]) -> List[Dict]:
     """Parses raw sheet values into structured dictionaries."""

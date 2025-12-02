@@ -38,7 +38,8 @@ Khi đọc file này để phân tích hoặc thêm nhật ký mới, BẮT BU�
 
 # Mục Lục (Table of Contents)
 
-1.  [02/12/2025 - Auto Login & Force Home Redirect](#02122025-auto-login--force-home-redirect)
+1.  [03/12/2025 - Google Form Integration & Telegram Polling Removal](#03122025-google-form-integration--telegram-polling-removal)
+2.  [02/12/2025 - Auto Login & Force Home Redirect](#02122025-auto-login--force-home-redirect)
 2.  [01/12/2025 - Asset Management: PDF Export & Smart Navigation](#01122025-asset-management-pdf-export--smart-navigation)
 3.  [30/11/2025 - Asset Management Fixes & Refactor](#30112025-asset-management-fixes--refactor)
 4.  [29/11/2025 - Refactoring Code & Security Optimization](#29112025-refactoring-code--security-optimization)
@@ -51,6 +52,46 @@ Khi đọc file này để phân tích hoặc thêm nhật ký mới, BẮT BU�
 11. [10/10/2025 - UI/UX: Audio Alert & Search](#10102025-uiux-audio-alert--search)
 12. [09/10/2025 - Google Sheet Module](#09102025-google-sheet-module)
 13. [08/10/2025 - Image Upload & Database Migration](#08102025-image-upload--database-migration)
+
+---
+
+# <a id="03122025-google-form-integration--telegram-polling-removal"></a> 03/12/2025 📝 Google Form Integration & Telegram Polling Removal
+**Version:** v1.14.0 | **Tags:** #googleform, #telegram, #backend, #integration
+
+## 1. Tổng quan (Overview)
+* **Mục tiêu:** Thay thế tính năng đăng ký khách qua Telegram Bot bằng Google Form để ổn định hơn, đồng thời tối ưu hóa hệ thống bằng cách loại bỏ cơ chế Polling.
+* **Trạng thái:** ✅ Hoàn thành
+
+## 2. Vấn đề & Yêu cầu (Problem & Requirements)
+* **Bối cảnh:**
+    * Telegram Bot Polling đôi khi không ổn định hoặc bị trùng lặp xử lý.
+    * Việc nhập liệu qua chat bot khó kiểm soát format hơn so với Form.
+* **Yêu cầu cụ thể:**
+    * Vô hiệu hóa Polling nhưng giữ lại tính năng gửi thông báo.
+    * Đồng bộ dữ liệu từ Google Form (Sheet) về DB theo thời gian thực.
+    * Tự động tính toán thời gian dự kiến và validate dữ liệu chặt chẽ.
+
+## 3. Giải pháp Kỹ thuật (Technical Solution)
+* **3.1. Google Form Sync (`backend/app/services/form_sync_service.py`):**
+    * **Batch Processing:** Đọc toàn bộ Sheet, lọc các dòng chưa sync, xử lý và update lại trạng thái theo lô (Batch Update) để tiết kiệm quota API.
+    * **Validation:** Kiểm tra `userID` (Mã nhân viên) tồn tại và active. Chặn trùng lặp dựa trên CCCD trong ngày.
+    * **Time Logic:** `Estimated Time = Timestamp + 1h - 7h` (Fix lệch múi giờ Google Sheet).
+* **3.2. Telegram Optimization:**
+    * **Backend (`main.py`):** Loại bỏ `telegram_bot_service.start()` (Polling).
+    * **Notification:** Tích hợp gửi thông báo vào `form_sync_service.py` ngay sau khi sync thành công.
+* **3.3. Scheduler:**
+    * Job `sync_google_form_job` chạy mỗi 30s (đã test ổn định ở 5s).
+
+## 4. Kết quả & Cập nhật (Impact & Metrics)
+* **Files Modified:** `main.py`, `gsheets_reader.py`, `form_sync_service.py` (New).
+* **Tính năng mới:**
+    * Khách đăng ký qua Google Form sẽ tự động vào danh sách chờ sau ~30s.
+    * Thông báo Telegram vẫn hoạt động bình thường cho bảo vệ/lễ tân.
+* **Hiệu năng:** Giảm tải cho server vì không phải duy trì kết nối Polling liên tục.
+
+## 5. Bài học & Ghi chú (Lessons Learned)
+* **Google Sheet API:** Cần chú ý `valueRenderOption='FORMATTED_VALUE'` để lấy ngày tháng chuẩn.
+* **Timezone:** Google Form Timestamp thường là UTC hoặc múi giờ của Sheet, cần trừ/cộng phù hợp để ra giờ Local chính xác.
 
 ---
 
