@@ -23,6 +23,7 @@ from ..utils.plate_formatter import format_license_plate
 # --- THÊM IMPORT MỚI ĐỂ CHUẨN HÓA TÊN ---
 from ..utils.name_formatter import format_full_name
 # --- KẾT THÚC THÊM IMPORT ---
+from ..services.gsheets_reader import _get_service, delete_row_by_guest_info
 
 router = APIRouter(prefix="/guests", tags=["guests"])
 logger = logging.getLogger(__name__)
@@ -274,7 +275,7 @@ def _archive_image(image_path: str):
         logger.error(f"Could not archive image file {image_path}: {e}")
 
 @router.delete("/{guest_id}")
-def delete_guest(guest_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+def delete_guest(guest_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user), bg: BackgroundTasks = BackgroundTasks()):
     # Logic xóa giữ nguyên
     guest = db.query(models.Guest).options(joinedload(models.Guest.images)).get(guest_id)
     if not guest:
@@ -285,8 +286,27 @@ def delete_guest(guest_id: int, db: Session = Depends(get_db), user: models.User
     for image in guest.images:
         _archive_image(image.image_path)
 
+    # Prepare info for Sheet deletion before deleting from DB
+    guest_info_for_sheet = {
+        "full_name": guest.full_name,
+        "estimated_datetime": guest.estimated_datetime
+    }
+
     db.delete(guest)
     db.commit()
+
+    # --- THÊM MỚI: Xóa dòng tương ứng trên Google Sheet ---
+    if settings.GSHEETS_LIVE_SHEET_ID:
+        def bg_delete_sheet_row(sheet_id, info):
+            try:
+                service = _get_service()
+                delete_row_by_guest_info(service, sheet_id, info)
+            except Exception as e:
+                logger.error(f"Background sheet deletion failed: {e}")
+
+        bg.add_task(bg_delete_sheet_row, settings.GSHEETS_LIVE_SHEET_ID, guest_info_for_sheet)
+    # --- KẾT THÚC THÊM MỚI ---
+
     return {"ok": True}
 
 @router.delete("/images/{image_id}", dependencies=[Depends(require_roles("admin", "manager", "staff"))])

@@ -38,7 +38,8 @@ Khi đọc file này để phân tích hoặc thêm nhật ký mới, BẮT BU�
 
 # Mục Lục (Table of Contents)
 
-1.  [03/12/2025 - Google Form Integration & Telegram Polling Removal](#03122025-google-form-integration--telegram-polling-removal)
+1.  [03/12/2025 - Timezone Fix: Estimated DateTime Form Submission](#03122025-timezone-fix-estimated-datetime)
+2.  [03/12/2025 - Google Form Integration & Telegram Polling Removal](#03122025-google-form-integration--telegram-polling-removal)
 2.  [02/12/2025 - Auto Login & Force Home Redirect](#02122025-auto-login--force-home-redirect)
 2.  [01/12/2025 - Asset Management: PDF Export & Smart Navigation](#01122025-asset-management-pdf-export--smart-navigation)
 3.  [30/11/2025 - Asset Management Fixes & Refactor](#30112025-asset-management-fixes--refactor)
@@ -49,9 +50,63 @@ Khi đọc file này để phân tích hoặc thêm nhật ký mới, BẮT BU�
 8.  [16/10/2025 - Long-term Guest Registration](#16102025-long-term-guest-registration)
 9.  [14/10/2025 - ID Card Scanning (AI Microservice)](#14102025-id-card-scanning-ai-microservice)
 10. [12/10/2025 - Authentication Architecture: Refresh Token](#12102025-authentication-architecture-refresh-token)
-11. [10/10/2025 - UI/UX: Audio Alert & Search](#10102025-uiux-audio-alert--search)
-12. [09/10/2025 - Google Sheet Module](#09102025-google-sheet-module)
-13. [08/10/2025 - Image Upload & Database Migration](#08102025-image-upload--database-migration)
+3.  [02/12/2025 - Auto Login & Force Home Redirect](#02122025-auto-login--force-home-redirect)
+4.  [01/12/2025 - Asset Management: PDF Export & Smart Navigation](#01122025-asset-management-pdf-export--smart-navigation)
+5.  [30/11/2025 - Asset Management Fixes & Refactor](#30112025-asset-management-fixes--refactor)
+6.  [29/11/2025 - Refactoring Code & Security Optimization](#29112025-refactoring-code--security-optimization)
+7.  [23/10/2025 - Telegram Real-time Notification](#23102025-telegram-real-time-notification)
+8.  [22/10/2025 - Telegram History Archiving](#22102025-telegram-history-archiving)
+9.  [21/10/2025 - License Plate Standardization](#21102025-license-plate-standardization)
+10. [16/10/2025 - Long-term Guest Registration](#16102025-long-term-guest-registration)
+11. [14/10/2025 - ID Card Scanning (AI Microservice)](#14102025-id-card-scanning-ai-microservice)
+12. [12/10/2025 - Authentication Architecture: Refresh Token](#12102025-authentication-architecture-refresh-token)
+13. [10/10/2025 - UI/UX: Audio Alert & Search](#10102025-uiux-audio-alert--search)
+14. [09/10/2025 - Google Sheet Module](#09102025-google-sheet-module)
+15. [08/10/2025 - Image Upload & Database Migration](#08102025-image-upload--database-migration)
+
+---
+
+# <a id="03122025-timezone-fix-estimated-datetime"></a> 03/12/2025 🕐 Timezone Fix: Estimated DateTime Form Submission
+**Version:** v1.14.2 | **Tags:** #bugfix, #timezone, #backend, #critical
+
+## 1. Tổng quan (Overview)
+* **Mục tiêu:** Khắc phục lỗi sai lệch múi giờ +7 tiếng khi submit "Ngày Giờ Dự Kiến" từ Google Apps Script Web App.
+* **Trạng thái:** ✅ Hoàn thành
+
+## 2. Vấn đề & Yêu cầu (Problem & Requirements)
+* **Bối cảnh:**
+    * Người dùng nhập giờ dự kiến "12:27" trên form GAS Web App.
+    * Hệ thống hiển thị "19:27" trong database và frontend (sai lệch +7 giờ).
+    * Bug nghiêm trọng ảnh hưởng đến độ chính xác của dữ liệu thời gian.
+* **Yêu cầu cụ thể:**
+    * Đảm bảo thời gian được lưu chính xác theo múi giờ địa phương (Asia/Bangkok, GMT+7).
+    * Hiển thị đúng thời gian mà người dùng đã nhập trên form.
+    * Tránh double offset khi database driver tự động apply timezone transformation.
+
+## 3. Giải pháp Kỹ thuật (Technical Solution)
+* **Kiến trúc/Logic:** Input `datetime-local` từ browser → Parse as Naive → Localize to Asia/Bangkok → Convert to UTC → Strip timezone info → Save to DB (naive UTC) → Display converter back to local time.
+* **Backend (`backend/app/services/form_sync_service.py`):**
+    * Parse input string thành naive datetime object.
+    * Localize sang Asia/Bangkok timezone bằng `pytz.timezone(settings.TZ).localize(dt_naive)`.
+    * Convert localized datetime sang UTC: `dt_local.astimezone(pytz.utc)`.
+    * Strip timezone info trước khi lưu DB: `.replace(tzinfo=None)` để tránh database driver tự động apply offset lần nữa (double offset).
+    * Thêm enhanced logging để track conversion flow.
+
+## 4. Kết quả & Cập nhật (Impact & Metrics)
+* **Files Modified:** `backend/app/services/form_sync_service.py`.
+* **Sửa lỗi:** 
+    * Form input "12:27" → Database lưu giá trị UTC tương ứng (05:27 UTC naive).
+    * Khi hiển thị → System convert UTC về local time → Hiển thị chính xác "12:27".
+    * Không còn timezone offset issues cho estimated datetime submissions.
+
+## 5. Bài học & Ghi chú (Lessons Learned)
+* **Quy tắc xử lý Timezone khi nhận user input:**
+    1. Parse input thành naive datetime (không có timezone info).
+    2. Localize ngay lập tức sang local timezone bằng `pytz.localize()`.
+    3. Convert sang UTC để lưu trữ thống nhất.
+    4. Strip timezone info nếu database driver không hỗ trợ timezone-aware datetime (SQLite, PostgreSQL naive mode).
+* SQLite và nhiều DB khác không có native timezone support → Best practice: Lưu naive UTC và để application layer xử lý conversion khi display.
+* Không nên hardcode UTC offset (+7, -7) để xử lý timezone, luôn dùng `pytz` để đảm bảo tính chính xác.
 
 ---
 

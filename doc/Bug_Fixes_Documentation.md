@@ -29,21 +29,6 @@ Khi đọc file này để phân tích hoặc thêm nhật ký lỗi mới, BẮ
 * **Files Modified:** `file_A.py`, `file_B.vue`, ...
 * **Kết quả:** [Lỗi đã được khắc phục như thế nào?]
 
-## 5. Bài học & Ghi chú (Lessons Learned)
-* [Kinh nghiệm rút ra]
-```
-
-<!-- BẮT ĐẦU NỘI DUNG BUG LOG TỪ DƯỚI DÒNG NÀY -->
-
-# Mục Lục (Table of Contents)
-
-1.  [03/12/2025 - Google Form Integration Fixes (Timezone & Schema)](#03122025-google-form-integration-fixes)
-2.  [02/12/2025 - Timezone Discrepancy in Guard Gate & Telegram](#02122025-timezone-discrepancy)
-2.  [02/12/2025 - ReferenceError in RegisterGuest](#02122025-reference-error-register-guest)
-3.  [02/12/2025 - Syntax Error & Duplicate Identifier in RegisterGuest](#02122025-syntax-error--duplicate-identifier)
-4.  [02/12/2025 - Telegram Bot Conflict & Duplicate Registration](#02122025-telegram-bot-conflict--duplicate-registration)
-5.  [01/12/2025 - PDF Export & Print Layout Issues](#01122025-pdf-export--print-layout-issues)
-6.  [30/11/2025 - Asset Management Registration Errors](#30112025-asset-management-registration-errors)
 7.  [29/11/2025 - White Screen & Token Expiry](#29112025-white-screen--token-expiry)
 8.  [28/11/2025 - Task List Loading & Image Upload Failures](#28112025-task-list-loading--image-upload-failures)
 9.  [21-23/11/2025 - Database Schema Mismatch](#21-23112025-database-schema-mismatch)

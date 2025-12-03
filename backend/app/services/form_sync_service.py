@@ -13,6 +13,7 @@ from ..models import User, Guest, get_local_time
 from ..config import settings
 from .gsheets_reader import _get_service, read_form_responses, batch_update_status
 from ..utils.notifications import run_pending_list_notification, send_event_to_archive_background
+from ..utils.plate_formatter import format_license_plate
 
 logger = logging.getLogger("[Form Sync]")
 
@@ -48,28 +49,31 @@ def sync_google_form_registrations():
         for i, row in enumerate(rows):
             # Row structure:
             # 0: timeStamp, 1: userID, 2: guestName, 3: CCCD, 
-            # 4: vendorName, 5: plateNo, 6: jobDetail, 7: SYNC_STATUS
+            # 4: vendorName, 5: plateNo, 6: jobDetail, 7: Email, 8: estimatedTime, 9: Col9, 10: SYNC_STATUS
             
             # Calculate Excel Row Index (0-based list index + 2)
             row_index = i + 2
             
             # Check if already synced
-            sync_status = row[7] if len(row) > 7 else ""
+            sync_status = row[10] if len(row) > 10 else ""
             if sync_status and sync_status.strip():
                 continue # Skip if already processed
 
             # Extract data safely
             timestamp_str = row[0] if len(row) > 0 else ""
             user_id_raw = row[1] if len(row) > 1 else ""
-            guest_name = row[2] if len(row) > 2 else ""
+            guest_name_raw = row[2] if len(row) > 2 else ""
             cccd = row[3] if len(row) > 3 else ""
             vendor_name = row[4] if len(row) > 4 else ""
             plate_no_raw = row[5] if len(row) > 5 else ""
             job_detail = row[6] if len(row) > 6 else ""
+            # row[7] is Email - skip
+            estimated_time_str = row[8] if len(row) > 8 else ""
 
             # Sanitize
             user_id = user_id_raw.strip()
-            plate_no = plate_no_raw.strip().upper()
+            plate_no = format_license_plate(plate_no_raw)
+            guest_name = guest_name_raw.strip().title()
             
             # --- VALIDATION ---
 
@@ -118,26 +122,53 @@ def sync_google_form_registrations():
                     created_at=get_local_time()
                 )
                 
-                # Handle Estimated Time from timestamp_str
-                # timestamp_str format example: "2/12/2025 17:35:36"
+                # Handle Estimated Time
                 estimated_dt = get_local_time() # Default fallback
-                if timestamp_str:
+                
+                if estimated_time_str:
+                    logger.info(f"Raw estimated_time_str: '{estimated_time_str}'")
                     try:
-                        # Try parsing common formats
+                        # datetime-local format: "YYYY-MM-DDTHH:MM"
+                        # Google Sheets might reformat it, but usually it comes as string from GAS
+                        # Added more formats to be safe
+                        for fmt in ("%Y-%m-%dT%H:%M", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M", "%Y-%m-%d %H:%M"):
+                            try:
+                                dt_naive = datetime.strptime(estimated_time_str, fmt)
+                                # Localize to settings.TZ (Asia/Bangkok)
+                                dt_local = pytz.timezone(settings.TZ).localize(dt_naive)
+                                # Convert to UTC for storage (to avoid double offset issue)
+                                estimated_dt = dt_local.astimezone(pytz.utc)
+                                logger.info(f"Parsed estimated_dt (Local): {dt_local} -> (UTC): {estimated_dt}")
+                                break
+                            except ValueError:
+                                continue
+                    except Exception as e:
+                        logger.warning(f"Could not parse estimated_time '{estimated_time_str}': {e}")
+                
+                elif timestamp_str:
+                    # Fallback to Timestamp + 1 hour logic
+                    try:
                         for fmt in ("%d/%m/%Y %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
                             try:
                                 dt_naive = datetime.strptime(timestamp_str, fmt)
-                                # Assume form timestamp is in local time (or server time)
-                                # We need to make it timezone aware
-                                estimated_dt = pytz.timezone(settings.TZ).localize(dt_naive)
+                                # Timestamp from GAS is already formatted in GMT+7 string but we parse as naive
+                                # We treat it as local time
+                                dt_local = pytz.timezone(settings.TZ).localize(dt_naive)
+                                # Apply the offset fix (Timestamp + 1h - 7h) as per previous logic
+                                # Convert to UTC
+                                estimated_dt = (dt_local + timedelta(hours=1) - timedelta(hours=7)).astimezone(pytz.utc)
                                 break
                             except ValueError:
                                 continue
                     except Exception as e:
                         logger.warning(f"Could not parse timestamp '{timestamp_str}': {e}")
 
-                # Requirement: Estimated Time = Timestamp + 1 hour - 7 hours (Timezone fix)
-                new_guest.estimated_datetime = estimated_dt + timedelta(hours=1) - timedelta(hours=7)
+                # Ensure we save naive UTC if the DB driver prefers it, but keeping tzinfo usually works if configured right.
+                # However, to be safe against the "19:27" issue, we strip tzinfo after converting to UTC.
+                if estimated_dt and estimated_dt.tzinfo:
+                     estimated_dt = estimated_dt.replace(tzinfo=None)
+
+                new_guest.estimated_datetime = estimated_dt
 
                 db.add(new_guest)
                 new_guest_objects.append(new_guest) # Add to list

@@ -59,7 +59,7 @@ def read_form_responses(service, sheet_id: str) -> List[List]:
     sheet_name = "Câu trả lời biểu mẫu 1"
     logger.info(f"Reading form responses from '{sheet_name}'...")
     try:
-        range_name = f"'{sheet_name}'!A2:H" # Read from A2 to H (skipping header)
+        range_name = f"'{sheet_name}'!A2:K" # Read from A2 to K (skipping header)
         # Use FORMATTED_VALUE to get strings for dates/times
         resp = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, 
@@ -93,9 +93,9 @@ def batch_update_status(service, sheet_id: str, updates: List[Tuple[int, str]]):
     data = []
     
     for row_idx, status in updates:
-        # Construct range for column H at specific row
-        # Example: 'Câu trả lời biểu mẫu 1'!H5
-        range_name = f"'{sheet_name}'!H{row_idx}"
+        # Construct range for column K (Index 10) at specific row
+        # Example: 'Câu trả lời biểu mẫu 1'!K5
+        range_name = f"'{sheet_name}'!K{row_idx}"
         data.append({
             "range": range_name,
             "values": [[status]]
@@ -234,3 +234,90 @@ def filter_and_aggregate(q: Optional[str], start: Optional[date], end: Optional[
     
     return out, charts, kpi
 
+def delete_row_by_guest_info(service, sheet_id: str, guest_info: dict):
+    """
+    Finds and deletes a row in 'Câu trả lời biểu mẫu 1' matching the guest info.
+    Matching criteria:
+    - Guest Name (Column C / Index 2)
+    - Estimated Date Time (Column I / Index 8) - derived from 'test' column
+    """
+    sheet_name = "Câu trả lời biểu mẫu 1"
+    try:
+        # 1. Read all data to find the row index
+        rows = read_form_responses(service, sheet_id)
+        if not rows:
+            logger.warning("No data found in sheet to delete.")
+            return
+
+        target_row_index = -1
+        
+        # guest_info keys: full_name, estimated_datetime (datetime object)
+        target_name = normalize_text(guest_info.get("full_name"))
+        target_est_dt = guest_info.get("estimated_datetime")
+
+        for i, row in enumerate(rows):
+            # Row structure: 0:Timestamp, 1:UserID, 2:GuestName, ..., 8:EstimatedTime
+            if len(row) <= 8: continue
+            
+            row_name = normalize_text(row[2])
+            row_est_time_str = row[8]
+            
+            # Check Name
+            if row_name != target_name:
+                continue
+
+            # Check Estimated Time
+            # Parse row_est_time_str to datetime
+            row_dt = None
+            if row_est_time_str:
+                for fmt in ("%Y-%m-%dT%H:%M", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M"):
+                    try:
+                        dt_naive = datetime.strptime(row_est_time_str, fmt)
+                        row_dt = pytz.timezone(settings.TZ).localize(dt_naive)
+                        break
+                    except ValueError:
+                        continue
+            
+            # Compare datetimes (allowing small difference if seconds are lost)
+            if target_est_dt and row_dt:
+                diff = abs((target_est_dt - row_dt).total_seconds())
+                if diff < 60: # Match within 1 minute
+                    target_row_index = i + 2 # +2 because rows is 0-indexed from A2
+                    break
+        
+        if target_row_index != -1:
+            logger.info(f"Found matching row at index {target_row_index}. Deleting...")
+            
+            # 2. Delete the row
+            # We need the sheetId (integer), not the spreadsheetId (string)
+            # First, get the sheetId for "Câu trả lời biểu mẫu 1"
+            ss = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+            sheet_meta = next((s for s in ss['sheets'] if s['properties']['title'] == sheet_name), None)
+            
+            if not sheet_meta:
+                logger.error(f"Sheet '{sheet_name}' not found.")
+                return
+
+            sheet_id_int = sheet_meta['properties']['sheetId']
+
+            request = {
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": sheet_id_int,
+                        "dimension": "ROWS",
+                        "startIndex": target_row_index - 1, # 0-based inclusive
+                        "endIndex": target_row_index # 0-based exclusive
+                    }
+                }
+            }
+
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id,
+                body={"requests": [request]}
+            ).execute()
+            logger.info(f"Successfully deleted row {target_row_index} in '{sheet_name}'.")
+        else:
+            logger.warning(f"Could not find row to delete for guest: {guest_info.get('full_name')}")
+
+    except Exception as e:
+        logger.error(f"Error deleting row from sheet: {e}")
