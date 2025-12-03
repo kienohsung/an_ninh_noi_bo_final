@@ -10,3 +10,15 @@ dist/
 build/
 coverage/
 *.log
+
+# Sensitive files
+backend/credentials.json
+backend/gcp-service-account.json
+gcp-service-account.json
+
+# Database
+*.db
+*.sqlite
+
+# Runtime files
+backend/telegram_last_message_id.txt
