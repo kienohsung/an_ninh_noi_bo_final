@@ -22,3 +22,4 @@ gcp-service-account.json
 
 # Runtime files
 backend/telegram_last_message_id.txt
+/.git-rewrite
