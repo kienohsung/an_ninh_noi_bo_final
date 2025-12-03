@@ -288,7 +288,7 @@
               <q-chip 
                 v-if="props.value" 
                 icon="schedule" 
-                :label="quasarDate.formatDate(props.value, 'DD/MM HH:mm')" 
+                :label="quasarDate.formatDate(quasarDate.addToDate(props.value, { hours: 7 }), 'DD/MM HH:mm')" 
                 dense 
                 outline 
                 size="sm"
@@ -864,13 +864,10 @@ const columns = [
     format: (val) => {
       if (!val) return '';
       try {
-        // Lấy thời gian từ CSDL (đang bị hiểu là giờ local, ví dụ 3:00)
+        // Lấy thời gian từ CSDL
         const dbDate = new Date(val);
         
-        // Cộng thêm 7 giờ để hiển thị đúng (ví dụ 10:00)
-        dbDate.setHours(dbDate.getHours() + 7);
-        
-        // Hiển thị thời gian đã cộng theo định dạng Việt Nam
+        // Hiển thị thời gian theo định dạng Việt Nam
         return dbDate.toLocaleString('vi-VN');
       } catch (e) {
         return val; // Trả về giá trị gốc nếu có lỗi

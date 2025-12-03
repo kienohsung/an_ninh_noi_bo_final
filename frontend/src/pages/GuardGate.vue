@@ -63,7 +63,7 @@
             <q-chip 
               v-if="props.value" 
               icon="schedule" 
-              :label="quasarDate.formatDate(props.value, 'DD/MM HH:mm')" 
+              :label="quasarDate.formatDate(quasarDate.addToDate(props.value, { hours: 7 }), 'DD/MM HH:mm')" 
               dense 
               outline 
               size="md"
@@ -166,7 +166,7 @@
             <q-chip 
               v-if="props.value" 
               icon="schedule" 
-              :label="quasarDate.formatDate(props.value, 'DD/MM HH:mm')" 
+              :label="quasarDate.formatDate(quasarDate.addToDate(props.value, { hours: 7 }), 'DD/MM HH:mm')" 
               dense 
               outline 
               size="sm"
@@ -254,7 +254,8 @@ function isOverdue(row) {
       const now = new Date();
       // estimated_datetime là chuỗi ISO (VD: "2025-10-30T17:00:00")
       // new Date() có thể phân tích trực tiếp chuỗi này
-      const estDate = new Date(row.estimated_datetime);
+      // Fix timezone +7
+      const estDate = quasarDate.addToDate(new Date(row.estimated_datetime), { hours: 7 });
 
       // So sánh: Giờ hiện tại > Giờ dự kiến
       return now > estDate;
@@ -313,9 +314,11 @@ const checkedInColumns = [
           // Thêm 'Z' để báo cho browser biết đây là giờ UTC
           const dateStr = val.endsWith('Z') ? val : val + 'Z';
           const dbDate = new Date(dateStr);
+          // Fix timezone -7 as requested
+          const adjustedDate = quasarDate.addToDate(dbDate, { hours: -7 });
           
           // Hiển thị thời gian theo định dạng Việt Nam (Browser tự convert UTC -> Local)
-          return dbDate.toLocaleString('vi-VN');
+          return adjustedDate.toLocaleString('vi-VN');
         } catch (e) {
           return val; // Trả về giá trị gốc nếu có lỗi
         }

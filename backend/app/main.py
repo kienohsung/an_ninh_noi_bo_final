@@ -201,7 +201,7 @@ def on_startup():
             max_instances=1,
             misfire_grace_time=30,
         )
-        # Job đồng bộ Google Form (5 giây/lần - Testing Mode)
+        # Job đồng bộ Google Form (30 giây/lần)
         sched.add_job(
             sync_google_form_registrations,
             trigger=IntervalTrigger(seconds=30),
