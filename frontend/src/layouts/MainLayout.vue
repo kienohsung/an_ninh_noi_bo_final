@@ -20,6 +20,13 @@
           <q-item-section>Dashboard</q-item-section>
         </q-item>
 
+        <q-item v-if="['admin','manager'].includes(auth.user?.role)" clickable v-ripple to="/reports">
+          <q-item-section avatar><q-icon name="assessment"/></q-item-section>
+          <q-item-section>Báo cáo & Phân tích</q-item-section>
+        </q-item>
+
+        <q-separator v-if="['admin','manager'].includes(auth.user?.role)" />
+
         <q-item v-if="['admin','manager','staff'].includes(auth.user?.role)" clickable v-ripple to="/register-guest">
           <q-item-section avatar><q-icon name="person_add"/></q-item-section>
           <q-item-section>Đăng ký khách</q-item-section>

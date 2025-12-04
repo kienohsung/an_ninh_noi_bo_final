@@ -26,3 +26,6 @@ backend/telegram_last_message_id.txt
 
 # Uploads
 backend/uploads/
+
+# Documentation
+doc/

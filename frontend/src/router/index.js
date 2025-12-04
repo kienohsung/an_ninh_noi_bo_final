@@ -16,6 +16,7 @@ import VehicleLogPage from '../pages/VehicleLogPage.vue'
 // === CHECKLIST 2.9 (SỬA LỖI): Import 2 trang mới ===
 import RegisterAssetPage from '../pages/RegisterAssetPage.vue'
 import AssetManagementPage from '../pages/AssetManagementPage.vue'
+import ReportsPage from '../pages/ReportsPage.vue'
 
 
 function defaultRouteForRole(role) {
@@ -41,6 +42,7 @@ const routes = [
         }
       },
       { path: 'dashboard', component: DashboardPage, meta: { roles: ['admin', 'manager'] } },
+      { path: 'reports', component: ReportsPage, meta: { roles: ['admin', 'manager'] } },
       { path: 'register-guest', component: RegisterGuest, meta: { roles: ['admin', 'manager', 'staff'] } },
       { path: 'long-term-guests', component: LongTermGuestsPage, meta: { roles: ['admin', 'manager', 'staff'] } },
       { path: 'guard-gate', component: GuardGate, meta: { roles: ['admin', 'guard'] } },
