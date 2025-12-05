@@ -48,7 +48,8 @@
     </q-card>
 
     <div class="row q-col-gutter-md">
-      <div class="col-12 col-lg-8">
+      <!-- Lượt khách vào theo ngày -->
+      <div class="col-12 col-lg-6">
         <q-card>
           <q-card-section>
              <div class="text-subtitle1">Lượt khách vào theo ngày</div>
@@ -60,21 +61,26 @@
         </q-card>
       </div>
       
-      <!-- === CẢI TIẾN 5: Biểu đồ tài sản thay thế 2 biểu đồ cũ === -->
-      <div class="col-12 col-md-6 col-lg-4">
+      <!-- === DASHBOARD MIXED CHART: Biểu đồ tài sản theo ngày === -->
+      <div class="col-12 col-lg-6">
         <q-card>
           <q-card-section>
-            <div class="text-subtitle1">Trạng thái tài sản ra/vào</div>
+            <div class="text-subtitle1">Tài sản ra/vào theo ngày</div>
           </q-card-section>
           <q-separator />
           <q-card-section>
-            <PieChart :labels="assetsByStatus.labels" :series="assetsByStatus.series"/>
+            <MixedChart 
+              :labels="assetsDaily.labels" 
+              :out-series="assetsDaily.outSeries" 
+              :in-series="assetsDaily.inSeries"
+              :cumulative-series="assetsDaily.cumulativeSeries"
+            />
           </q-card-section>
         </q-card>
       </div>
-      <!-- === KẾT THÚC CẢI TIẾN 5 === -->
+      <!-- === KẾT THÚC DASHBOARD MIXED CHART === -->
       
-      <div class="col-12 col-lg-8">
+      <div class="col-12 col-lg-6">
         <q-card>
           <q-card-section>
             <div class="text-subtitle1">Top 10 xe vào nhiều nhất</div>
@@ -94,20 +100,23 @@ import { reactive, onMounted, watch } from 'vue';
 import { date } from 'quasar'; // Import Quasar date utility
 import api from '../api';
 import BarChart from '../components/charts/BarChart.vue';
-import PieChart from '../components/charts/PieChart.vue';
+import MixedChart from '../components/charts/MixedChart.vue';
 
 const guestsDaily = reactive({ labels: [], series: [] });
-// === CẢI TIẾN 5: Xóa 2 reactive cũ, thêm reactive mới ===
-// const guestsByUser = reactive({ labels: [], series: [] });  // XÓA
-// const guestsBySupplier = reactive({ labels: [], series: [] });  // XÓA
-const assetsByStatus = reactive({ labels: [], series: [] });  // THÊM MỚI
-// === KẾT THÚC CẢI TIẾN 5 ===
+// === DASHBOARD MIXED CHART: Reactive data cho biểu đồ tài sản ===
+const assetsDaily = reactive({ 
+  labels: [], 
+  outSeries: [], 
+  inSeries: [], 
+  cumulativeSeries: [] 
+});
+// === KẾT THÚC DASHBOARD MIXED CHART ===
 const guestsByPlate = reactive({ labels: [], series: [] });
 
 const filters = reactive({
   start: '',
   end: '',
-  range: 'last7days', // default
+  range: 'last1month', // default
 });
 
 // Format date to YYYY/MM/DD for q-date component
@@ -153,23 +162,25 @@ async function load() {
   }
   
   try {
-    // === CẢI TIẾN 5: Thay đổi API calls ===
-    const [daily, assetStatus, byPlate] = await Promise.all([
+    // === DASHBOARD MIXED CHART: API calls ===
+    const [daily, assetDaily, byPlate] = await Promise.all([
       api.get('/reports/guests_daily', { params }),
-      api.get('/reports/assets_by_status', { params }),  // MỚI
+      api.get('/reports/assets_daily', { params }),
       api.get('/reports/guests_by_plate', { params })
     ]);
     
     guestsDaily.labels = daily.data.labels;
     guestsDaily.series = daily.data.series;
     
-    // Gán data cho biểu đồ tài sản mới
-    assetsByStatus.labels = assetStatus.data.labels;
-    assetsByStatus.series = assetStatus.data.series;
+    // Gán data cho biểu đồ tài sản theo ngày
+    assetsDaily.labels = assetDaily.data.labels;
+    assetsDaily.outSeries = assetDaily.data.out_series;
+    assetsDaily.inSeries = assetDaily.data.in_series;
+    assetsDaily.cumulativeSeries = assetDaily.data.cumulative_series;
     
     guestsByPlate.labels = byPlate.data.labels;
     guestsByPlate.series = byPlate.data.series;
-    // === KẾT THÚC CẢI TIẾN 5 ===
+    // === KẾT THÚC DASHBOARD MIXED CHART ===
   } catch (error) {
     console.error("Failed to load dashboard data:", error);
   }
@@ -179,6 +190,6 @@ async function load() {
 watch(filters, load, { deep: true, immediate: false }); 
 
 onMounted(() => {
-  setRange('last7days'); // This will trigger the watch and load initial data
+  setRange('last1month'); // This will trigger the watch and load initial data
 });
 </script>

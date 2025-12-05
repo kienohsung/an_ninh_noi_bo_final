@@ -7,7 +7,7 @@
       <div class="grid-row flex">
         <!-- Logo Box (no right border) -->
          <div class="q-pa-xs flex flex-center" style="width: 150px;">
-            <img src="/ohsung_logo_v2.jpg" alt="Logo" style="height: 94px; max-width: 100%; object-fit: contain;" />
+            <img src="/ohsung_logo_v2.jpg" alt="Logo" style="height: 100px; max-width: 200%; object-fit: contain;" />
          </div>
          <!-- Spacer -->
          <div class="col-grow"></div>
@@ -39,7 +39,7 @@
                  v-if="mode === 'edit'" 
                  v-model="localData.destination" 
                  class="paper-input full-width" 
-                 placeholder="vị trí: 'ncc'"
+                 placeholder="Nhập tên Nhà cung cấp ở đây"
                />
                <span v-else class="q-pl-xs">{{ localData.destination }}</span>
             </div>
@@ -67,7 +67,7 @@
                  v-if="mode === 'edit'" 
                  v-model="localData.department" 
                  class="paper-input full-width" 
-                 placeholder="Nhập bộ phận..."
+                 placeholder="Nhập bộ phận ở đây ..."
                />
                <span v-else class="text-weight-bold">{{ localData.department }}</span>
             </div>
@@ -216,8 +216,8 @@
                         v-model="localData.vietnamese_manager_name" 
                         @input="updateLocalData"
                         class="paper-input text-center text-weight-bold" 
-                        style="font-size: 18px;"
-                        placeholder="Vị trí tên"
+                        style="font-size: 11px;"
+                        placeholder="Nhập tên quản lý người Việt"
                       />
                       <span v-else class="text-weight-bold" style="font-size: 18px;">{{ localData.vietnamese_manager_name }}</span>
                       <div class="text-caption">Vietnamese manager</div>
@@ -228,8 +228,8 @@
                         v-model="localData.korean_manager_name" 
                         @input="updateLocalData"
                         class="paper-input text-center text-weight-bold" 
-                        style="font-size: 18px;"
-                        placeholder="Vị trí tên"
+                        style="font-size: 11px;"
+                        placeholder="Nhập tên quản lý người Hàn"
                       />
                      <span v-else class="text-weight-bold" style="font-size: 18px;">{{ localData.korean_manager_name }}</span>
                      <div class="text-caption">Korean manager</div>

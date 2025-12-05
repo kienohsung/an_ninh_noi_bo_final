@@ -152,6 +152,117 @@ def assets_by_status(
         return {"labels": [], "series": []}
 # === KẾT THÚC CẢI TIẾN 5 ===
 
+# === DASHBOARD MIXED CHART: Endpoint thống kê tài sản theo ngày ===
+@router.get("/assets_daily")
+def assets_daily(
+    db: Session = Depends(get_db),
+    start: datetime | None = None,
+    end: datetime | None = None
+):
+    """
+    Thống kê tài sản ra/vào theo ngày và tổng tích luỹ tài sản ra.
+    
+    Returns:
+        {
+            "labels": ["2025-11-01", "2025-11-02", ...],
+            "out_series": [5, 3, 7, ...],        # Số tài sản ra trong ngày
+            "in_series": [2, 1, 4, ...],          # Số tài sản vào trong ngày
+            "cumulative_series": [5, 8, 15, ...]  # Tổng tích luỹ tài sản RA: cumulative[n] = cumulative[n-1] + ra[n]
+        }
+    """
+    try:
+        from datetime import date as date_type, timedelta
+        
+        # Xác định date range
+        if start and end:
+            start_date = start.date() if hasattr(start, 'date') else start
+            end_date = end.date() if hasattr(end, 'date') else end
+        else:
+            # Nếu không có filter, lấy từ dữ liệu
+            earliest = db.query(func.min(models.AssetLog.created_at)).scalar()
+            latest = db.query(func.max(models.AssetLog.created_at)).scalar()
+            if not earliest or not latest:
+                return {
+                    "labels": [],
+                    "out_series": [],
+                    "in_series": [],
+                    "cumulative_series": []
+                }
+            start_date = earliest.date()
+            end_date = latest.date()
+        
+        # Query tài sản RA theo ngày (pending_out + checked_out)
+        query_out = db.query(
+            func.date(models.AssetLog.created_at).label('date'),
+            func.count(models.AssetLog.id).label('count')
+        ).filter(
+            models.AssetLog.status.in_(['pending_out', 'checked_out'])
+        )
+        
+        if start:
+            query_out = query_out.filter(models.AssetLog.created_at >= start)
+        if end:
+            query_out = query_out.filter(models.AssetLog.created_at <= end)
+        
+        out_data = query_out.group_by(func.date(models.AssetLog.created_at)).all()
+        out_dict = {str(date): count for date, count in out_data}
+        
+        # Query tài sản VÀO theo ngày (returned)
+        query_in = db.query(
+            func.date(models.AssetLog.check_in_back_time).label('date'),
+            func.count(models.AssetLog.id).label('count')
+        ).filter(
+            models.AssetLog.status == 'returned',
+            models.AssetLog.check_in_back_time != None
+        )
+        
+        if start:
+            query_in = query_in.filter(models.AssetLog.check_in_back_time >= start)
+        if end:
+            query_in = query_in.filter(models.AssetLog.check_in_back_time <= end)
+        
+        in_data = query_in.group_by(func.date(models.AssetLog.check_in_back_time)).all()
+        in_dict = {str(date): count for date, count in in_data}
+        
+        # Tạo FULL date range từ start_date đến end_date (không bỏ sót ngày nào)
+        labels = []
+        out_series = []
+        in_series = []
+        
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = str(current_date)
+            labels.append(date_str)
+            out_series.append(out_dict.get(date_str, 0))
+            in_series.append(in_dict.get(date_str, 0))
+            current_date += timedelta(days=1)
+        
+        # Tính cumulative sum: chỉ cộng dồn tài sản RA (bỏ qua tài sản vào)
+        # cumulative[n] = cumulative[n-1] + ra[n]
+        cumulative_series = []
+        cumulative = 0
+        for out_count in out_series:
+            cumulative += out_count
+            cumulative_series.append(cumulative)
+        
+        
+        
+        return {
+            "labels": labels,
+            "out_series": out_series,
+            "in_series": in_series,
+            "cumulative_series": cumulative_series
+        }
+    except Exception as e:
+        logger.error(f"Error in assets_daily: {e}", exc_info=True)
+        return {
+            "labels": [],
+            "out_series": [],
+            "in_series": [],
+            "cumulative_series": []
+        }
+# === KẾT THÚC DASHBOARD MIXED CHART ===
+
 # === MODULE REPORT v1.15.0: Visitor Security Index ===
 @router.get("/visitor-security-index")
 def visitor_security_index(
