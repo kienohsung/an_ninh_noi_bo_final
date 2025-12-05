@@ -245,8 +245,6 @@ def assets_daily(
             cumulative += out_count
             cumulative_series.append(cumulative)
         
-        
-        
         return {
             "labels": labels,
             "out_series": out_series,
@@ -395,6 +393,8 @@ def visitor_security_index(
 @router.get("/asset-control")
 def asset_control(
     db: Session = Depends(get_db),
+    start: datetime | None = None,
+    end: datetime | None = None,
     include_returned: bool = False
 ):
     """
@@ -410,15 +410,22 @@ def asset_control(
         tz = pytz.timezone(settings.TZ)
         today = datetime.now(tz).date()
         
+        # Query base với date filter nếu có
+        base_query = db.query(models.AssetLog)
+        if start:
+            base_query = base_query.filter(models.AssetLog.created_at >= start)
+        if end:
+            base_query = base_query.filter(models.AssetLog.created_at <= end)
+        
         # Đếm tài sản đang ra ngoài
-        total_out = db.query(func.count(models.AssetLog.id)).filter(
+        total_out = base_query.filter(
             models.AssetLog.status.in_(['pending_out', 'checked_out'])
-        ).scalar() or 0
+        ).count() or 0
         
         # Đếm tài sản đã hoàn trả
-        total_returned = db.query(func.count(models.AssetLog.id)).filter(
+        total_returned = base_query.filter(
             models.AssetLog.status == 'returned'
-        ).scalar() or 0
+        ).count() or 0
         
         # Tính tỷ lệ hoàn trả
         total_all = total_out + total_returned
@@ -426,7 +433,7 @@ def asset_control(
         
         # Tìm tài sản quá hạn
         # CRITICAL FIX: Add NULL check for expected_return_date
-        overdue_query = db.query(models.AssetLog).join(
+        overdue_query = base_query.join(
             models.User, models.AssetLog.registered_by_user_id == models.User.id
         ).filter(
             models.AssetLog.expected_return_date != None,
@@ -477,7 +484,11 @@ def asset_control(
 
 # === MODULE REPORT v1.15.0: System Overview ===
 @router.get("/system-overview")
-def system_overview(db: Session = Depends(get_db)):
+def system_overview(
+    db: Session = Depends(get_db),
+    start: datetime | None = None,
+    end: datetime | None = None
+):
     """
     Tổng quan hệ thống với các KPIs quan trọng.
     Returns: SystemOverviewResponse
@@ -492,14 +503,24 @@ def system_overview(db: Session = Depends(get_db)):
         now = datetime.now(tz)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         
-        # Tổng users
+        # Tổng users (không filter theo date)
         total_users = db.query(func.count(models.User.id)).scalar() or 0
         
-        # Tổng guests
-        total_guests = db.query(func.count(models.Guest.id)).scalar() or 0
+        # Tổng guests (có thể filter theo date)
+        guest_query = db.query(func.count(models.Guest.id))
+        if start:
+            guest_query = guest_query.filter(models.Guest.created_at >= start)
+        if end:
+            guest_query = guest_query.filter(models.Guest.created_at <= end)
+        total_guests = guest_query.scalar() or 0
         
-        # Tổng assets
-        total_assets = db.query(func.count(models.AssetLog.id)).scalar() or 0
+        # Tổng assets (có thể filter theo date)
+        asset_query = db.query(func.count(models.AssetLog.id))
+        if start:
+            asset_query = asset_query.filter(models.AssetLog.created_at >= start)
+        if end:
+            asset_query = asset_query.filter(models.AssetLog.created_at <= end)
+        total_assets = asset_query.scalar() or 0
         
         # Khách active hôm nay (status = checked_in)
         active_guests_today = db.query(func.count(models.Guest.id)).filter(

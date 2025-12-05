@@ -1,95 +1,180 @@
 <!-- File: security_mgmt_dev/frontend/src/pages/LoginPage.vue -->
 <template>
   <div class="fullscreen bg-grey-2 flex flex-center">
-    <!-- 
-      Sửa đổi: 
-      - Bỏ style cố định `min-width: 360px`.
-      - Sử dụng class "my-card" để định nghĩa chiều rộng linh hoạt, phù hợp với mọi màn hình.
-    -->
     <q-card class="my-card">
       <q-card-section>
         <div class="text-h6">Đăng nhập</div>
         <div class="text-caption text-grey-7">Nhập mã nhân viên và mật khẩu</div>
       </q-card-section>
       <q-separator/>
+      
+      <!-- DEBUG PANEL (chỉ hiện khi có debug info) -->
+      <q-card-section v-if="debugInfo.length > 0" class="bg-orange-1">
+        <div class="text-caption text-weight-bold text-negative q-mb-sm">
+          DEBUG INFO (long-press để copy):
+        </div>
+        <q-input
+          v-model="debugText"
+          type="textarea"
+          outlined
+          readonly
+          dense
+          rows="8"
+          autogrow
+          class="text-caption"
+          style="font-family: monospace; font-size: 11px;"
+        />
+      </q-card-section>
+      
       <q-card-section>
-        <q-form @submit="onSubmit" class="q-gutter-md">
+        <div class="q-gutter-md">
           <q-input v-model="username" label="Tên đăng nhập" dense outlined autofocus/>
-          <q-input v-model="password" type="password" label="Mật khẩu" dense outlined/>
-          <q-btn type="submit" label="Đăng nhập" color="primary" class="full-width"/>
-        </q-form>
+          <q-input 
+            v-model="password" 
+            type="password" 
+            label="Mật khẩu" 
+            dense 
+            outlined
+            @keyup.enter.prevent="onSubmit"
+          />
+          <q-btn 
+            type="button"
+            @click.prevent="onSubmit" 
+            label="Đăng nhập" 
+            color="primary" 
+            class="full-width"
+          />
+          <!-- TEST BUTTON -->
+          <q-btn 
+            type="button"
+            @click="testClick" 
+            label="TEST (bấm để kiểm tra)" 
+            color="orange" 
+            class="full-width q-mt-sm"
+          />
+        </div>
       </q-card-section>
     </q-card>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import { useQuasar } from 'quasar'
+import api from '../api'
 
 const username = ref('')
 const password = ref('')
 const auth = useAuthStore()
 const router = useRouter()
+const $q = useQuasar()
+const debugInfo = ref([])
 
-// Clear caches on login page load to prevent white screen
-// Clear caches on login page load to prevent white screen
+// Computed: join debug info for textarea
+const debugText = computed(() => debugInfo.value.join('\n'))
+
+function addDebug(msg) {
+  const timestamp = new Date().toLocaleTimeString();
+  debugInfo.value.push(`[${timestamp}] ${msg}`);
+  console.log(`[LoginPage] ${msg}`);
+}
+
+function testClick() {
+  addDebug('TEST BUTTON CLICKED - Vue is working!');
+  alert('TEST OK - Click works!');
+}
+
+// SIMPLIFIED: Only check if already authenticated
 onMounted(async () => {
+  addDebug('Page mounted');
   try {
-    // Clear localStorage (except auth token if exists)
-    // FIX: Corrected token key from 'auth_token' to 'token' and added 'refreshToken'
     const token = localStorage.getItem('token');
-    const refreshToken = localStorage.getItem('refreshToken');
+    addDebug(`Token exists: ${!!token}`);
     
-    localStorage.clear();
-    
-    if (token) {
-      localStorage.setItem('token', token);
+    // If has token, try to verify it's still valid
+    if (token && auth.isAuthenticated) {
+      addDebug('Already authenticated, redirecting...');
+      await router.push('/');
+    } else {
+      addDebug('Not authenticated, showing login form');
     }
-    if (refreshToken) {
-      localStorage.setItem('refreshToken', refreshToken);
-    }
-    
-    // Clear sessionStorage
-    sessionStorage.clear();
-    
-    // Unregister service workers if any
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (const registration of registrations) {
-        await registration.unregister();
-      }
-    }
-    
-    console.log('[LoginPage] Cache cleared successfully');
-
-    // Attempt auto-login if token exists
-    if (token) {
-        await auth.bootstrap();
-        if (auth.isAuthenticated) {
-            console.log('[LoginPage] Auto-login successful, redirecting...');
-            router.push('/');
-        }
-    }
-
   } catch (error) {
-    console.error('[LoginPage] Error clearing cache:', error);
+    addDebug(`Mount error: ${error.message}`);
   }
 });
 
-async function onSubmit () {
+async function onSubmit() {
   try {
-    await auth.login(username.value, password.value)
-    router.push('/')
+    addDebug('🔥 onSubmit CALLED!');
+    addDebug(`Username: "${username.value}" (len: ${username.value?.length})`);
+    addDebug(`Password: "${password.value}" (len: ${password.value?.length})`);
+    
+    if (!username.value || !password.value) {
+      addDebug('Validation failed - empty fields');
+      $q.notify({
+        type: 'warning',
+        message: 'Vui lòng nhập tên đăng nhập và mật khẩu',
+        position: 'top'
+      });
+      return;
+    }
+
+    addDebug('Calling /token API...');
+    
+    // CUSTOM LOGIN - Bypass auth store
+    // TRIM whitespace to prevent autofill issues
+    const cleanUsername = username.value.trim();
+    const cleanPassword = password.value.trim();
+    
+    addDebug(`Sending: user="${cleanUsername}" (${cleanUsername.length}), pw="${cleanPassword}" (${cleanPassword.length})`);
+    
+    const res = await api.post('/token', new URLSearchParams({
+      username: cleanUsername,
+      password: cleanPassword
+    }));
+    
+    addDebug('✅ Got tokens from server');
+    
+    // Save tokens
+    const token = res.data.access_token;
+    const refreshToken = res.data.refresh_token;
+    
+    localStorage.setItem('token', token);
+    localStorage.setItem('refreshToken', refreshToken);
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    
+    addDebug('✅ Tokens saved to localStorage');
+    addDebug('✅ LOGIN SUCCESS!');
+    
+    $q.notify({
+      type: 'positive',
+      message: 'Đăng nhập thành công! Đang chuyển trang...',
+      position: 'top',
+      timeout: 2000
+    });
+    
+    // Wait a bit then redirect
+    addDebug('Redirecting in 1 second...');
+    setTimeout(() => {
+      window.location.href = '/';
+    }, 1000);
+    
   } catch (e) {
-    console.error(e)
-    // Thêm thông báo lỗi cho người dùng nếu cần
+    addDebug(`❌ LOGIN ERROR: ${e.message || e}`);
+    addDebug(`Detail: ${e.response?.data?.detail || 'No detail'}`);
+    addDebug(`Status: ${e.response?.status || 'No status'}`);
+    $q.notify({
+      type: 'negative',
+      message: e.response?.data?.detail || 'Sai tên đăng nhập hoặc mật khẩu',
+      position: 'top',
+      timeout: 5000
+    });
   }
 }
 </script>
 
-<!-- Thêm style cho card để đảm bảo tính đáp ứng -->
 <style lang="scss" scoped>
 .my-card {
   width: 100%;

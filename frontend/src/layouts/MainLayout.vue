@@ -82,13 +82,20 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
 
 const auth = useAuthStore()
 const router = useRouter()
 const leftDrawerOpen = ref(true)
+
+// Auto-hide menu after 5 seconds
+onMounted(() => {
+  setTimeout(() => {
+    leftDrawerOpen.value = false
+  }, 5000)
+})
 
 function logout () {
   auth.logout()
