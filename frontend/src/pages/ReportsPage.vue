@@ -128,6 +128,13 @@
                 :text-color="exportFilters.status === 'pending' ? 'white' : 'black'"
                 size="sm"
               />
+              <q-btn 
+                label="Đã ra" 
+                @click="exportFilters.status = 'checked_out'" 
+                :color="exportFilters.status === 'checked_out' ? 'grey' : 'white'" 
+                :text-color="exportFilters.status === 'checked_out' ? 'white' : 'black'"
+                size="sm"
+              />
             </q-btn-group>
           </div>
 

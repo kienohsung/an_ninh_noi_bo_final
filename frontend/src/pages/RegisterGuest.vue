@@ -308,8 +308,12 @@
           </template>
            <template #body-cell-status="props">
             <q-td :props="props">
-              <q-chip :color="props.row.status === 'checked_in' ? 'positive' : 'grey'" text-color="white" dense>
-                {{ props.row.status === 'checked_in' ? 'ĐÃ VÀO' : 'CHƯA VÀO' }}
+              <q-chip 
+                :color="props.row.status === 'checked_in' ? 'positive' : props.row.status === 'checked_out' ? 'grey' : 'orange'" 
+                text-color="white" 
+                dense
+              >
+                {{ props.row.status === 'checked_in' ? 'ĐÃ VÀO' : props.row.status === 'checked_out' ? 'ĐÃ RA' : 'CHƯA VÀO' }}
               </q-chip>
             </q-td>
           </template>

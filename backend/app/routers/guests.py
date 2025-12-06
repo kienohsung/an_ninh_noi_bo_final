@@ -525,12 +525,14 @@ def export_guests(
             # Format check-in time
             check_in_str = ""
             if guest.check_in_time:
-                check_in_str = guest.check_in_time.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
+                # Datetime trong DB đã là local time (từ get_local_time()), chỉ cần format
+                check_in_str = guest.check_in_time.strftime("%d/%m/%Y %H:%M")
             
             # Format check-out time
             check_out_str = ""
             if guest.check_out_time:
-                check_out_str = guest.check_out_time.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
+                # Datetime trong DB đã là local time (từ get_local_time()), chỉ cần format
+                check_out_str = guest.check_out_time.strftime("%d/%m/%Y %H:%M")
             
             data_to_export.append({
                 "STT": idx,  # Auto-numbering

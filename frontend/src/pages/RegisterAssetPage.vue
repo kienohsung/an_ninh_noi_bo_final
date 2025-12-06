@@ -3,9 +3,7 @@
     <div class="row justify-center">
       <div class="col-12" style="max-width: 230mm"> <!-- Slightly wider than A4 to allow padding -->
         <q-card class="q-mb-md">
-          <q-card-section class="row items-center justify-between">
-            <div class="text-subtitle1">Đăng ký Tài sản Ra/Vào</div>
-          </q-card-section>
+          <!-- Đã xóa tiêu đề cũ -->
           
           <!-- THÊM TABS -->
           <q-separator />
@@ -20,6 +18,16 @@
             <q-tab name="returnable" label="Tạm xuất / Tái nhập" icon="sync" />
             <q-tab name="non_returnable" label="Xuất hẳn / Không hoàn lại" icon="send" />
           </q-tabs>
+          
+          <!-- Hướng dẫn màu giấy in -->
+          <q-card-section class="q-py-md" style="background-color: #f5f5f5;">
+            <div v-if="assetType === 'returnable'" class="text-center text-weight-bold" style="font-size: 17px;">
+              GIẤY MANG TÀI SẢN RA CÓ HOÀN LẠI, IN <span style="background-color: yellow; padding: 2px 6px;">GIẤY VÀNG</span>
+            </div>
+            <div v-else class="text-center text-weight-bold" style="font-size: 17px;">
+              GIẤY MANG TÀI SẢN RA KHÔNG HOÀN LẠI, IN <span style="background-color: #e0e0e0; padding: 2px 6px; border: 1px solid #999;">GIẤY TRẮNG</span>
+            </div>
+          </q-card-section>
         </q-card>
 
         <!-- WYSIWYG Form -->
