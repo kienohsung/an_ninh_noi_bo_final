@@ -28,18 +28,18 @@
       </div>
     </div>
 
-    <!-- Bảng: Khách đang chờ vào -->
+    <!-- Bảng: Khách đang xử lý (Chờ vào + Đã vào) -->
     <q-card class="q-mb-lg">
        <q-card-section class="bg-primary text-white">
-        <div class="text-subtitle1 text-bold">Khách Chờ Vào ({{ pending.length }})</div>
+        <div class="text-subtitle1 text-bold">Khách Đang Xử Lý ({{ activeGuests.length }})</div>
       </q-card-section>
       <q-separator />
       
       <!-- Các comment chú thích đã được dời ra BÊN NGOÀI thẻ q-table -->
       <!-- Class 'blink-warning' sẽ được áp dụng khi quá hạn -->
       <q-table
-        :rows="pending"
-        :columns="pendingColumns"
+        :rows="activeGuests"
+        :columns="activeGuestsColumns"
         row-key="id"
         flat
         :pagination="{ rowsPerPage: 50 }"
@@ -51,9 +51,51 @@
       >
         <!-- BẮT ĐẦU SỬA LỖI: Dòng comment lỗi đã bị xóa hoàn toàn khỏi đây -->
 
+        <!-- NEW: Status chip column -->
+        <template #body-cell-status_chip="props">
+          <q-td :props="props">
+            <q-chip 
+              v-if="props.row.status === 'pending'"
+              color="positive" 
+              text-color="white"
+              dense
+              size="sm"
+            >
+              Chờ vào
+            </q-chip>
+            <q-chip 
+              v-else-if="props.row.status === 'checked_in'"
+              color="warning" 
+              text-color="black"
+              dense
+              size="sm"
+            >
+              Đang ở trong
+            </q-chip>
+          </q-td>
+        </template>
+
         <template #body-cell-actions="props">
           <q-td :props="props">
-            <q-btn color="positive" icon="login" label="Xác nhận vào" @click="confirmIn(props.row)" dense/>
+            <!-- Dynamic button based on status -->
+            <q-btn 
+              v-if="props.row.status === 'pending'"
+              color="positive" 
+              icon="login" 
+              label="Vào" 
+              @click="confirmIn(props.row)" 
+              dense
+            />
+            <q-btn 
+              v-else-if="props.row.status === 'checked_in' && props.row.license_plate"
+              color="warning" 
+              text-color="black"
+              icon="logout" 
+              label="Ra" 
+              @click="confirmOut(props.row)" 
+              dense
+            />
+            <!-- Khách checked_in nhưng không có xe sẽ không hiển thị nút Ra (tự động chuyển xuống bảng dưới) -->
           </q-td>
         </template>
         
@@ -146,20 +188,44 @@
     </q-card>
     <!-- === KẾT THÚC CHECKLIST 3.5 === -->
 
-    <!-- Bảng: Khách đã vào trong ngày -->
+    <!-- Bảng: Lịch sử khách đã ra về / đã vào không xe -->
      <q-card>
        <q-card-section class="bg-blue-grey-8 text-white">
-        <div class="text-subtitle1 text-bold">Khách Đã Vào</div>
+        <div class="text-subtitle1 text-bold">Lịch Sử Khách ({{ historyGuests.length }}) </div>
       </q-card-section>
       <q-separator />
       <q-table
-        :rows="checkedIn"
-        :columns="checkedInColumns"
+        :rows="historyGuests"
+        :columns="historyGuestsColumns"
         row-key="id"
         flat
         :pagination="{ rowsPerPage: 10 }"
         :loading="loading"
       >
+        <!-- Status chip for history table -->
+        <template #body-cell-status_history="props">
+          <q-td :props="props">
+            <q-chip 
+              v-if="props.row.status === 'checked_out'"
+              color="grey" 
+              text-color="white"
+              dense
+              size="sm"
+            >
+              Đã về
+            </q-chip>
+            <q-chip 
+              v-else-if="props.row.status === 'checked_in'"
+              color="blue" 
+              text-color="white"
+              dense
+              size="sm"
+            >
+              Đã vào
+            </q-chip>
+          </q-td>
+        </template>
+
         <!-- BẮT ĐẦU NÂNG CẤP: Định dạng ô Giờ dự kiến (cho bảng đã vào) -->
         <template #body-cell-estimated_datetime="props">
           <q-td :props="props">
@@ -198,6 +264,7 @@ import {
   getGuestsSnapshot, 
   saveGuestsSnapshot, 
   enqueueConfirm,
+  enqueueConfirmOut,  // NEW: Add offline support for check-out
   drainQueue, 
   enqueueAssetCheckOut,
   enqueueAssetReturn
@@ -207,8 +274,9 @@ const $q = useQuasar()
 const auth = useAuthStore()
 const loading = ref(false)
 
-const pending = ref([])
-const checkedIn = ref([])
+// Refactored variable names for clarity
+const activeGuests = ref([])  // Khách đang xử lý (pending + checked_in)
+const historyGuests = ref([]) // Lịch sử đã ra về (checked_out)
 // === CHECKLIST 3.2: Thêm 2 ref mới cho tài sản ===
 const assetsPendingOut = ref([])
 const assetsCheckedOut = ref([])
@@ -292,15 +360,19 @@ const baseColumns = [
 ];
 // --- KẾT THÚC SỬA ĐỔI ---
 
-const pendingColumns = [
+const activeGuestsColumns = [
   // Cột "actions" được đưa lên đầu tiên
   { name: 'actions', label: 'Hành động', field: 'actions', align: 'left' },
+  // Add status chip column
+  { name: 'status_chip', label: 'Trạng thái', field: 'status', align: 'left' },
   ...baseColumns
 ];
 
-const checkedInColumns = [
+const historyGuestsColumns = [
+    // Add status chip column at the beginning
+    { name: 'status_history', label: 'Trạng thái', field: 'status', align: 'left' },
     ...baseColumns,
-    // Thêm cột giờ vào cho bảng đã check-in (ĐÃ SỬA LỖI +7 GIỜ)
+    // Thêm cột giờ vào và giờ ra cho bảng lịch sử
     { 
       name: 'check_in_time', 
       align: 'left', 
@@ -310,17 +382,30 @@ const checkedInColumns = [
       format: (val) => {
         if (!val) return '';
         try {
-          // Lấy thời gian từ CSDL (được lưu là UTC Naive)
-          // Thêm 'Z' để báo cho browser biết đây là giờ UTC
           const dateStr = val.endsWith('Z') ? val : val + 'Z';
           const dbDate = new Date(dateStr);
-          // Fix timezone -7 as requested
           const adjustedDate = quasarDate.addToDate(dbDate, { hours: -7 });
-          
-          // Hiển thị thời gian theo định dạng Việt Nam (Browser tự convert UTC -> Local)
           return adjustedDate.toLocaleString('vi-VN');
         } catch (e) {
-          return val; // Trả về giá trị gốc nếu có lỗi
+          return val;
+        }
+      } 
+    },
+    { 
+      name: 'check_out_time', 
+      align: 'left', 
+      label: 'Giờ ra', 
+      field: 'check_out_time', 
+      sortable: true, 
+      format: (val) => {
+        if (!val) return '';
+        try {
+          const dateStr = val.endsWith('Z') ? val : val + 'Z';
+          const dbDate = new Date(dateStr);
+          const adjustedDate = quasarDate.addToDate(dbDate, { hours: -7 });
+          return adjustedDate.toLocaleString('vi-VN');
+        } catch (e) {
+          return val;
         }
       } 
     },
@@ -361,8 +446,8 @@ async function load () {
   loading.value = true;
   const userId = auth.user?.id || 'anon'
   try {
-    // 1. Load guests (giữ nguyên)
-    const res = await api.get('/guests', { params: { q: q.value || undefined, status: 'pending,checked_in' } })
+    // 1. Load guests - BÂY GIỜ BAO GỒM CẢ checked_out
+    const res = await api.get('/guests', { params: { q: q.value || undefined, status: 'pending,checked_in,checked_out' } })
     const rows = res.data || []
     
     const newPendingCount = rows.filter(r => r.status === 'pending').length;
@@ -371,8 +456,43 @@ async function load () {
     }
     previousPendingCount.value = newPendingCount;
 
-    pending.value = rows.filter(r => r.status === 'pending')
-    checkedIn.value = rows.filter(r => r.status === 'checked_in')
+    // Phân loại theo logic mới + Backward Compatibility
+    // Xác định thời điểm bắt đầu ngày hôm nay
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    
+    // activeGuests: 
+    // - pending (all)
+    // - OR (checked_in AND has license_plate AND created_at >= today)
+    activeGuests.value = rows.filter(r => {
+      if (r.status === 'pending') return true;
+      
+      if (r.status === 'checked_in' && r.license_plate) {
+        // Chỉ hiển thị khách checked_in có xe nếu đăng ký từ hôm nay
+        const createdAt = new Date(r.created_at);
+        return createdAt >= startOfToday;
+      }
+      
+      return false;
+    });
+    
+    // historyGuests:
+    // - checked_out
+    // - OR (checked_in AND no license_plate)
+    // - OR (checked_in AND created_at < today) --> Old data
+    historyGuests.value = rows.filter(r => {
+      if (r.status === 'checked_out') return true;
+      
+      if (r.status === 'checked_in') {
+        // Khách không xe hoặc dữ liệu cũ đều xuống bảng lịch sử
+        if (!r.license_plate) return true;
+        
+        const createdAt = new Date(r.created_at);
+        return createdAt < startOfToday; // Old data
+      }
+      
+      return false;
+    });
 
     // === FIX: THÊM LOGIC LOAD ASSETS ===
     // 2. Load assets từ endpoint guard-gate
@@ -384,14 +504,14 @@ async function load () {
     // === KẾT THÚC FIX ===
 
     // Lưu cache PWA
-    const plainPending = JSON.parse(JSON.stringify(pending.value));
-    const plainCheckedIn = JSON.parse(JSON.stringify(checkedIn.value));
+    const plainActive = JSON.parse(JSON.stringify(activeGuests.value));
+    const plainHistory = JSON.parse(JSON.stringify(historyGuests.value));
     const plainAssetsPending = JSON.parse(JSON.stringify(assetsPendingOut.value));
     const plainAssetsChecked = JSON.parse(JSON.stringify(assetsCheckedOut.value));
     
     await saveGuestsSnapshot(userId, { 
-      pending: plainPending, 
-      checkedIn: plainCheckedIn,
+      pending: plainActive,  // Keep 'pending' key for backward compatibility
+      checkedIn: plainHistory,  // Keep 'checkedIn' key for backward compatibility
       assetsPending: plainAssetsPending,
       assetsChecked: plainAssetsChecked
     });
@@ -414,13 +534,12 @@ async function confirmIn (row) {
   // Offline handling (giữ nguyên)
   if (!navigator.onLine) {
     await enqueueConfirm(row.id)
-    // BẮT ĐẦU SỬA LỖI: Sửa $q-notify thành $q.notify
     $q.notify({ type:'warning', message: 'Đã xếp hàng xác nhận. Sẽ đồng bộ khi online.'})
-    // KẾT THÚC SỬA LỖI
-    const index = pending.value.findIndex(p => p.id === row.id);
+    const index = activeGuests.value.findIndex(p => p.id === row.id);
     if (index > -1) {
-        const [confirmedGuest] = pending.value.splice(index, 1);
-        checkedIn.value.unshift(confirmedGuest);
+        const [confirmedGuest] = activeGuests.value.splice(index, 1);
+        confirmedGuest.status = 'checked_in'; // Update status optimistically
+        activeGuests.value.unshift(confirmedGuest); // Keep in same table but update status
     }
     try { 
       const registration = await navigator.serviceWorker.ready;
@@ -434,14 +553,48 @@ async function confirmIn (row) {
   // Online handling
   try {
     await api.post(`/guests/${row.id}/confirm-in`)
-    // BẮT ĐẦU SỬA LỖI: Sửa $q-notify thành $q.notify
     $q.notify({type: 'positive', message: `${row.full_name} đã được xác nhận vào.`})
-    // KẾT THÚC SỬA LỖI
     load() // Tải lại dữ liệu sau khi xác nhận
   } catch(error) {
-     // BẮT ĐẦU SỬA LỖI: Sửa $q-notify thành $q.notify
      $q.notify({type: 'negative', message: 'Xác nhận thất bại.'})
-     // KẾT THÚC SỬA LỖI
+  }
+}
+
+// === NEW FUNCTION: confirmOut ===
+async function confirmOut(row) {
+  // Offline handling with PWA support
+  if (!navigator.onLine) {
+    try {
+      await enqueueConfirmOut(row.id)
+      $q.notify({ type:'warning', message: 'Đã xếp hàng xác nhận ra (offline). Sẽ đồng bộ khi online.'})
+      
+      // Optimistic update: move from activeGuests to historyGuests
+      const index = activeGuests.value.findIndex(p => p.id === row.id);
+      if (index > -1) {
+        const [confirmedGuest] = activeGuests.value.splice(index, 1);
+        confirmedGuest.status = 'checked_out';
+        confirmedGuest.check_out_time = new Date().toISOString();
+        historyGuests.value.unshift(confirmedGuest);
+      }
+      
+      // Register background sync
+      const registration = await navigator.serviceWorker.ready;
+      await registration.sync.register('sync-confirm');
+    } catch(e) {
+      console.error('Failed to enqueue check-out:', e);
+      $q.notify({ type: 'negative', message: 'Lỗi khi xếp hàng offline.' });
+    }
+    return
+  }
+  
+  // Online handling
+  try {
+    await api.post(`/guests/${row.id}/confirm-out`)
+    $q.notify({type: 'info', message: `${row.full_name} đã được xác nhận ra.`})
+    load() // Reload data - guest will move to "Lịch sử" table
+  } catch(error) {
+    console.error('Check-out failed:', error)
+    $q.notify({type: 'negative', message: error.response?.data?.detail || 'Xác nhận ra thất bại.'})
   }
 }
 
@@ -527,16 +680,22 @@ async function confirmAssetReturn(row) {
 
 
 // --- PWA Function ---
-// === CHECKLIST 4.6 (Phần 4): Cập nhật flushQueue để xử lý Tài sản ===
+// === CHECKLIST 4.6 (Phần 4): Cập nhật flushQueue để xử lý Tài sản VÀ Khách ra ===
 async function flushQueue() {
   await drainQueue(async (item) => {
+    // Guest check-in
     if (item.type === 'confirmIn') {
       await api.post(`/guests/${item.payload.guestId}/confirm-in`);
     }
-    // Thêm logic mới
+    // Guest check-out (NEW)
+    if (item.type === 'confirmOut') {
+      await api.post(`/guests/${item.payload.guestId}/confirm-out`);
+    }
+    // Asset checkout
     if (item.type === 'ASSET_CHECKOUT') {
       await api.post(`/assets/${item.payload.assetId}/checkout`);
     }
+    // Asset return
     if (item.type === 'ASSET_RETURN') {
       await api.post(`/assets/${item.payload.assetId}/checkin-back`);
     }
@@ -558,8 +717,8 @@ onMounted(async () => {
   const userId = auth.user?.id || 'anon'
   const snap = await getGuestsSnapshot(userId)
   if (snap?.data) {
-    pending.value = snap.data.pending || []
-    checkedIn.value = snap.data.checkedIn || []
+    activeGuests.value = snap.data.pending || []  // backward compatibility
+    historyGuests.value = snap.data.checkedIn || []  // backward compatibility
     // === CHECKLIST 4.4: Tải assets từ PWA cache ===
     assetsPendingOut.value = snap.data.assetsPending || []
     assetsCheckedOut.value = snap.data.assetsChecked || []
@@ -571,7 +730,7 @@ onMounted(async () => {
   if (navigator.onLine) {
     await load()
   }
-  previousPendingCount.value = pending.value.length;
+  previousPendingCount.value = activeGuests.value.filter(g => g.status === 'pending').length;
   
   navigator.serviceWorker?.addEventListener('message', async (e) => {
     const { type } = e.data || {}

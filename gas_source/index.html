@@ -274,11 +274,11 @@
 
                 <!-- Vendor -->
                 <div class="form-group">
-                    <label for="vendor">Nhà Cung Cấp / Công Ty</label>
+                    <label for="vendor">Nhà Cung Cấp / Công Ty <span style="color:red">*</span></label>
                     <div class="input-group">
                         <i class="fa-solid fa-building"></i>
                         <input type="text" id="vendor" name="vendor" list="vendorList"
-                            placeholder="Chọn hoặc nhập tên công ty...">
+                            placeholder="Chọn hoặc nhập tên công ty..." required>
                     </div>
                     <datalist id="vendorList">
                         <? var vendors = getVendorsList(); ?>
@@ -299,10 +299,10 @@
 
                 <!-- Job Detail -->
                 <div class="form-group">
-                    <label for="jobDetail">Nội Dung Công Việc</label>
+                    <label for="jobDetail">Nội Dung Công Việc <span style="color:red">*</span></label>
                     <div class="input-group">
                         <i class="fa-solid fa-briefcase" style="top: 20px; transform: none;"></i>
-                        <textarea id="jobDetail" name="jobDetail" rows="3" placeholder="Mô tả công việc..."></textarea>
+                        <textarea id="jobDetail" name="jobDetail" rows="3" placeholder="Mô tả công việc..." required></textarea>
                     </div>
                 </div>
 

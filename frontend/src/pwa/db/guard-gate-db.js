@@ -16,20 +16,26 @@ export async function getGuestsSnapshot(userId) {
 export async function enqueueConfirm(guestId) {
   await db.queue.add({ type: 'confirmIn', payload: { guestId }, createdAt: Date.now() });
 }
+
+// Add offline support for guest check-out
+export async function enqueueConfirmOut(guestId) {
+  await db.queue.add({ type: 'confirmOut', payload: { guestId }, createdAt: Date.now() });
+}
+
 // === CHECKLIST 4.5 (Phần 1): Thêm hàm xếp hàng cho Tài sản ===
 export async function enqueueAssetCheckOut(assetId) {
-  await db.queue.add({ 
+  await db.queue.add({
     type: 'ASSET_CHECKOUT', // Giống trong kế hoạch
-    payload: { assetId }, 
-    createdAt: Date.now() 
+    payload: { assetId },
+    createdAt: Date.now()
   });
 }
 
 export async function enqueueAssetReturn(assetId) {
-  await db.queue.add({ 
+  await db.queue.add({
     type: 'ASSET_RETURN', // Giống trong kế hoạch
-    payload: { assetId }, 
-    createdAt: Date.now() 
+    payload: { assetId },
+    createdAt: Date.now()
   });
 }
 // === KẾT THÚC CHECKLIST 4.5 (Phần 1) ===
@@ -37,21 +43,21 @@ export async function enqueueAssetReturn(assetId) {
 // === CHECKLIST 4.5 (Phần 2): Cập nhật drainQueue để xử lý Tài sản ===
 export async function drainQueue(flushFn) {
   // Sửa: Dùng orderBy('createdAt') để đảm bảo thứ tự
-  const all = await db.queue.orderBy('createdAt').toArray(); 
-  
+  const all = await db.queue.orderBy('createdAt').toArray();
+
   for (const item of all) {
     try {
       // flushFn (sẽ được định nghĩa trong GuardGate.vue) 
       // sẽ gọi đúng API dựa trên item.type
       await flushFn(item);
-      
+
       // Chỉ xóa khỏi hàng đợi nếu flushFn thành công
       await db.queue.delete(item.id);
     } catch (e) {
       // stop on first failure to retry later
       // Sửa: Thêm log lỗi
       console.error('PWA drainQueue failed for item:', item, e);
-      break; 
+      break;
     }
   }
 }

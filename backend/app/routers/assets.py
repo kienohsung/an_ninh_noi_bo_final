@@ -510,3 +510,179 @@ def delete_asset(
     return {"message": "Đã xóa tài sản thành công"}
 
 # === KẾT THÚC CẢI TIẾN 2 ===
+
+# === EXPORT ENDPOINT ===
+@router.get("/export/xlsx")
+def export_assets(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    start_date: str | None = Query(default=None, description="Ngày bắt đầu (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Ngày kết thúc (YYYY-MM-DD)"),
+    status: str | None = Query(default=None, description="Trạng thái: pending_out,checked_out,returned"),
+    department: str | None = Query(default=None, description="Bộ phận")
+):
+    """Export assets to Excel with custom formatting"""
+    import pandas as pd
+    import io
+    import pytz
+    from fastapi import Response
+    from ..config import settings
+    from ..models import get_local_time
+    
+    try:
+        query = db.query(
+            models.AssetLog,
+            models.User.full_name.label("registered_by_name"),
+            models.User.username.label("registered_by_username")
+        ).join(
+            models.User, models.AssetLog.registered_by_user_id == models.User.id
+        ).options(joinedload(models.AssetLog.check_out_by)).options(joinedload(models.AssetLog.check_in_back_by))
+
+        # Role-based filtering
+        if current_user.role == "staff":
+            query = query.filter(models.AssetLog.registered_by_user_id == current_user.id)
+        
+        # Date range filtering
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                query = query.filter(models.AssetLog.created_at >= start_dt)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                query = query.filter(models.AssetLog.created_at <= end_dt)
+            except ValueError:
+                pass
+
+        # Status filtering
+        if status:
+            query = query.filter(models.AssetLog.status == status)
+
+        # Department filtering
+        if department:
+            query = query.filter(models.AssetLog.department.ilike(f"%{department}%"))
+
+        results = query.order_by(models.AssetLog.created_at.desc()).all()
+
+        # Status labels
+        status_labels = {
+            'pending_out': 'Chờ ra',
+            'checked_out': 'Đã ra (chờ về)',
+            'returned': 'Đã hoàn trả'
+        }
+        
+        data_to_export = []
+        for idx, (asset, registered_by_name, registered_by_username) in enumerate(results, start=1):
+            check_out_str = ""
+            if asset.check_out_time:
+                check_out_str = asset.check_out_time.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
+            
+            check_in_back_str = ""
+            if asset.check_in_back_time:
+                check_in_back_str = asset.check_in_back_time.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
+            
+            created_str = ""
+            if asset.created_at:
+                created_str = asset.created_at.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
+            
+            estimated_str = ""
+            if asset.estimated_datetime:
+                try:
+                    if asset.estimated_datetime.tzinfo is None:
+                        estimated_str = pytz.utc.localize(asset.estimated_datetime).astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y")
+                    else:
+                        estimated_str = asset.estimated_datetime.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y")
+                except Exception:
+                    try:
+                        estimated_str = asset.estimated_datetime.strftime("%d/%m/%Y")
+                    except Exception:
+                        estimated_str = str(asset.estimated_datetime)
+            
+            data_to_export.append({
+                "STT": idx,
+                "Người ĐK": registered_by_name,
+                "Bộ phận": asset.department or "",
+                "Nơi đến": asset.destination or "",
+                "Mô tả": asset.description_reason or "",
+                "SL": asset.quantity,
+                "Ngày ĐK": created_str,
+                "Dự kiến về": estimated_str,
+                "Giờ ra": check_out_str,
+                "BV XN ra": asset.check_out_by.full_name if asset.check_out_by else "",
+                "Giờ về": check_in_back_str,
+                "BV XN về": asset.check_in_back_by.full_name if asset.check_in_back_by else "",
+                "Trạng thái": status_labels.get(asset.status, asset.status)
+            })
+
+        df = pd.DataFrame(data_to_export)
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Assets', startrow=1, header=True)
+            
+            workbook = writer.book
+            worksheet = writer.sheets['Assets']
+            
+            # PAGE SETUP: A3 Landscape
+            worksheet.set_paper(8)
+            worksheet.set_landscape()
+            
+            # Title format
+            title_format = workbook.add_format({
+                'font_name': 'Courier New',
+                'font_size': 15,
+                'bold': True,
+                'align': 'center',
+                'valign': 'vcenter'
+            })
+            
+            # Header format
+            header_format = workbook.add_format({
+                'font_name': 'Courier New',
+                'font_size': 11,
+                'bold': True,
+                'align': 'left',
+                'valign': 'vcenter'
+            })
+            
+            # Data format
+            data_format = workbook.add_format({
+                'font_name': 'Courier New',
+                'font_size': 11,
+                'align': 'left',
+                'valign': 'vcenter'
+            })
+            
+            # Write title row
+            num_columns = len(df.columns)
+            worksheet.merge_range(0, 0, 0, num_columns - 1, 'SỔ THEO DÕI TÀI SẢN RA/VÀO', title_format)
+            
+            # Apply header format
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(1, col_num, value, header_format)
+            
+            # Apply data format
+            for row_num in range(len(df)):
+                for col_num in range(len(df.columns)):
+                    worksheet.write(row_num + 2, col_num, df.iloc[row_num, col_num], data_format)
+            
+            # Auto-adjust column widths
+            for col_num, column in enumerate(df.columns):
+                column_width = max(df[column].astype(str).map(len).max(), len(column))
+                worksheet.set_column(col_num, col_num, column_width + 2)
+
+        output.seek(0)
+
+        headers = {
+            'Content-Disposition': f'attachment; filename="so_theo_doi_tai_san_{get_local_time().strftime("%Y%m%d_%H%M")}.xlsx"'
+        }
+        return Response(content=output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Không thể tạo file Excel: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Không thể tạo file Excel.")

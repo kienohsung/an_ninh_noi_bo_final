@@ -77,7 +77,14 @@
             <!-- THÊM MỚI: Bổ sung estimated_time, thay đổi grid thành md-4 -->
             <div class="row q-col-gutter-md">
               <div class="col-12 col-md-6">
-                <q-input v-model="form.supplier_name" label="Nhà cung cấp" dense outlined>
+                <q-input 
+                  v-model="form.supplier_name" 
+                  label="Nhà cung cấp *" 
+                  dense 
+                  outlined
+                  required
+                  :rules="[val => !!val || 'Vui lòng nhập nhà cung cấp']"
+                >
                   <template v-slot:append>
                     <q-btn round dense flat icon="search" @click="openSearchDialog('supplier', 'main')" />
                   </template>
@@ -125,7 +132,18 @@
               </div>
               <!-- KẾT THÚC NÂNG CẤP -->
 
-              <div class="col-12 col-md-6"><q-input type="textarea" v-model="form.reason" label="Chi tiết / Lý do" outlined dense rows="1" /></div>
+              <div class="col-12 col-md-6">
+                <q-input 
+                  type="textarea" 
+                  v-model="form.reason" 
+                  label="Chi tiết / Lý do *" 
+                  outlined 
+                  dense 
+                  rows="1"
+                  required
+                  :rules="[val => !!val || 'Vui lòng nhập nội dung công việc']"
+                />
+              </div>
             </div>
             <q-separator class="q-my-md" />
             <div class="text-caption q-mb-sm">Thêm từng người trong đoàn:</div>
@@ -153,7 +171,14 @@
             </div>
 
             <div class="col-12 col-md-6">
-              <q-input v-model="form.supplier_name" label="Nhà cung cấp" dense outlined>
+              <q-input 
+                v-model="form.supplier_name" 
+                label="Nhà cung cấp *" 
+                dense 
+                outlined
+                required
+                :rules="[val => !!val || 'Vui lòng nhập nhà cung cấp']"
+              >
                 <template v-slot:append>
                   <q-btn round dense flat icon="search" @click="openSearchDialog('supplier', 'main')" />
                 </template>
@@ -195,7 +220,14 @@
             <!-- KẾT THÚC NÂNG CẤP -->
 
             <div class="col-12">
-                <q-input v-model="form.reason" label="Lý do / Chi tiết" dense outlined />
+                <q-input 
+                  v-model="form.reason" 
+                  label="Lý do / Chi tiết *" 
+                  dense 
+                  outlined
+                  required
+                  :rules="[val => !!val || 'Vui lòng nhập nội dung công việc']"
+                />
             </div>
 
             <div class="col-12">

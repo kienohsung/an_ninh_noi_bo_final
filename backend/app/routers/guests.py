@@ -471,7 +471,8 @@ def export_guests(
     start_date: str | None = Query(default=None, description="Ngày bắt đầu (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="Ngày kết thúc (YYYY-MM-DD)"),
     registrant_id: int | None = Query(default=None, description="ID người đăng ký"),
-    supplier_name: str | None = Query(default=None, description="Tên nhà cung cấp")
+    supplier_name: str | None = Query(default=None, description="Tên nhà cung cấp"),
+    status: str | None = Query(default=None, description="Trạng thái: checked_in hoặc pending")
 ):
     try:
         query = db.query(
@@ -511,63 +512,103 @@ def export_guests(
         if supplier_name:
              query = query.filter(models.Guest.supplier_name.ilike(f"%{supplier_name}%"))
 
+        # --- Status filtering ---
+        if status:
+            query = query.filter(models.Guest.status == status)
+
         results = query.order_by(models.Guest.created_at.desc()).all()
 
+        # === CUSTOM EXCEL FORMAT: New column order ===
+        # STT (auto-number), Giờ vào, Giờ ra, Họ tên, CCCD, Nhà thầu, Biển số, Người đăng ký, Mã nv, Lý do
         data_to_export = []
-        for guest, registered_by_name, registered_by_username in results:
+        for idx, (guest, registered_by_name, registered_by_username) in enumerate(results, start=1):
+            # Format check-in time
+            check_in_str = ""
+            if guest.check_in_time:
+                check_in_str = guest.check_in_time.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
             
-            # --- NÂNG CẤP: Định dạng Ngày giờ dự kiến ---
-            est_datetime_str = ""
-            if guest.estimated_datetime:
-                try:
-                    # Chuyển đổi sang múi giờ local (TZ) trước khi format
-                    # Giả định naive là UTC
-                    if guest.estimated_datetime.tzinfo is None:
-                        est_datetime_str = pytz.utc.localize(guest.estimated_datetime).astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
-                    else:
-                        est_datetime_str = guest.estimated_datetime.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
-                except Exception:
-                     # Fallback nếu datetime không có thông tin múi giờ (ví dụ: từ dữ liệu import cũ)
-                    try:
-                        est_datetime_str = guest.estimated_datetime.strftime("%d/%m/%Y %H:%M")
-                    except Exception:
-                         est_datetime_str = str(guest.estimated_datetime) # Fallback cuối cùng
-            # --- KẾT THÚC NÂNG CẤP ---
-
+            # Format check-out time
+            check_out_str = ""
+            if guest.check_out_time:
+                check_out_str = guest.check_out_time.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M")
+            
             data_to_export.append({
+                "STT": idx,  # Auto-numbering
+                "Giờ vào": check_in_str,
+                "Giờ ra": check_out_str,  # NEW: Check-out time column
                 "Họ tên": guest.full_name,
                 "CCCD": guest.id_card_number,
-                "Nhà cung cấp": guest.supplier_name,
-                "Công ty": guest.company, # Thêm cột Công ty
+                "Nhà thầu": guest.supplier_name,  # "Nhà thầu" instead of "Nhà cung cấp"
                 "Biển số": guest.license_plate,
                 "Người đăng ký": registered_by_name,
-                "Mã NV đăng ký": registered_by_username,
-                "Ngày đăng ký": guest.created_at.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M") if guest.created_at else "",
-                "Trạng thái": "ĐÃ VÀO" if guest.status == 'checked_in' else "CHƯA VÀO",
-                "Giờ vào": guest.check_in_time.astimezone(pytz.timezone(settings.TZ)).strftime("%d/%m/%Y %H:%M") if guest.check_in_time else "",
-                # --- NÂNG CẤP: Xuất Ngày giờ dự kiến (thay cho Giờ dự kiến) ---
-                "Ngày giờ dự kiến": est_datetime_str, # Cột mới
-                # "Giờ dự kiến": "", # Bỏ cột cũ (hoặc để trống nếu muốn giữ cấu trúc)
-                # --- KẾT THÚC NÂNG CẤP ---
-                "Lý do": guest.reason,
-                "Hình ảnh": ", ".join([img.image_path for img in guest.images])
+                "Mã nv": registered_by_username,
+                "Lý do": guest.reason
             })
 
         df = pd.DataFrame(data_to_export)
 
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer: # Dùng xlsxwriter để auto-fit
-            df.to_excel(writer, index=False, sheet_name='Guests')
-            # Auto-adjust columns' width
-            for column in df:
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            # Write dataframe starting from row 1 (leave row 0 for title)
+            df.to_excel(writer, index=False, sheet_name='Guests', startrow=1, header=True)
+            
+            workbook = writer.book
+            worksheet = writer.sheets['Guests']
+            
+            # === PAGE SETUP: A3 Landscape ===
+            worksheet.set_paper(8)  # A3 = 8
+            worksheet.set_landscape()
+            
+            # === FONT FORMATS ===
+            # Title format: Courier New, size 15, bold, centered
+            title_format = workbook.add_format({
+                'font_name': 'Courier New',
+                'font_size': 15,
+                'bold': True,
+                'align': 'center',
+                'valign': 'vcenter'
+            })
+            
+            # Header format: Courier New, size 11, bold
+            header_format = workbook.add_format({
+                'font_name': 'Courier New',
+                'font_size': 11,
+                'bold': True,
+                'align': 'left',
+                'valign': 'vcenter'
+            })
+            
+            # Data format: Courier New, size 11
+            data_format = workbook.add_format({
+                'font_name': 'Courier New',
+                'font_size': 11,
+                'align': 'left',
+                'valign': 'vcenter'
+            })
+            
+            # === WRITE TITLE ROW ===
+            # Merge cells for title across all columns
+            num_columns = len(df.columns)
+            worksheet.merge_range(0, 0, 0, num_columns - 1, 'SỔ THEO DÕI KHÁCH RA/VÀO', title_format)
+            
+            # === APPLY HEADER FORMAT (row 1) ===
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(1, col_num, value, header_format)
+            
+            # === APPLY DATA FORMAT (row 2 onwards) ===
+            for row_num in range(len(df)):
+                for col_num in range(len(df.columns)):
+                    worksheet.write(row_num + 2, col_num, df.iloc[row_num, col_num], data_format)
+            
+            # === AUTO-ADJUST COLUMN WIDTHS ===
+            for col_num, column in enumerate(df.columns):
                 column_width = max(df[column].astype(str).map(len).max(), len(column))
-                col_idx = df.columns.get_loc(column)
-                writer.sheets['Guests'].set_column(col_idx, col_idx, column_width + 1) # Thêm chút padding
+                worksheet.set_column(col_num, col_num, column_width + 2)  # Add padding
 
         output.seek(0)
 
         headers = {
-            'Content-Disposition': f'attachment; filename="guests_export_{get_local_time().strftime("%Y%m%d_%H%M")}.xlsx"'
+            'Content-Disposition': f'attachment; filename="so_theo_doi_khach_{get_local_time().strftime("%Y%m%d_%H%M")}.xlsx"'
         }
         return Response(content=output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
 

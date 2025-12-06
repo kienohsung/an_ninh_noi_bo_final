@@ -43,3 +43,35 @@ def confirm_in(guest_id: int, bg: BackgroundTasks, db: Session = Depends(get_db)
 
     # Vẫn trả về thông tin khách dù trạng thái có thay đổi hay không
     return schemas.GuestRead.model_validate(guest)
+
+@router.post("/{guest_id}/confirm-out", dependencies=[Depends(require_roles("admin","manager","guard","staff"))])
+def confirm_out(guest_id: int, bg: BackgroundTasks, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """
+    Xác nhận khách đã rời khỏi cổng (Check-out).
+    Chuyển trạng thái từ 'checked_in' sang 'checked_out'.
+    """
+    # Load guest với thông tin registered_by
+    guest = db.query(models.Guest).options(joinedload(models.Guest.registered_by)).get(guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    # Idempotency: Nếu đã checked_out rồi, trả về success ngay
+    if guest.status == "checked_out":
+        logger.info(f"Guest ID {guest_id} ({guest.full_name}) already checked out. No status change.")
+        return schemas.GuestRead.model_validate(guest)
+
+    # Cập nhật trạng thái
+    guest.status = "checked_out"
+    guest.check_out_time = get_local_time()
+    db.commit()
+    db.refresh(guest)
+    
+    logger.info(f"User {user.username} confirmed check-out for guest ID {guest_id} ({guest.full_name}).")
+
+    # Gửi sự kiện đến kênh lưu trữ
+    bg.add_task(send_event_to_archive_background, guest.id, "Xác nhận ra cổng", user.id)
+    
+    # Cập nhật danh sách chờ trên kênh chính
+    bg.add_task(run_pending_list_notification)
+
+    return schemas.GuestRead.model_validate(guest)
