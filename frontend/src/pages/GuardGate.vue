@@ -51,51 +51,42 @@
       >
         <!-- BẮT ĐẦU SỬA LỖI: Dòng comment lỗi đã bị xóa hoàn toàn khỏi đây -->
 
-        <!-- NEW: Status chip column -->
-        <template #body-cell-status_chip="props">
-          <q-td :props="props">
-            <q-chip 
-              v-if="props.row.status === 'pending'"
-              color="positive" 
-              text-color="white"
-              dense
-              size="sm"
-            >
-              Chờ vào
-            </q-chip>
-            <q-chip 
-              v-else-if="props.row.status === 'checked_in'"
-              color="warning" 
-              text-color="black"
-              dense
-              size="sm"
-            >
-              Đang ở trong
-            </q-chip>
-          </q-td>
-        </template>
-
+        <!-- Gộp Trạng thái + Hành động -->
         <template #body-cell-actions="props">
           <q-td :props="props">
-            <!-- Dynamic button based on status -->
+            <!-- Trường hợp 1: Khách đang chờ vào - Hiển thị NÚT -->
             <q-btn 
               v-if="props.row.status === 'pending'"
               color="positive" 
               icon="login" 
-              label="Vào" 
+              label="Xác nhận vào" 
               @click="confirmIn(props.row)" 
               dense
+              no-caps
             />
+            
+            <!-- Trường hợp 2: Khách đã vào (có xe) - Hiển thị NÚT RA -->
             <q-btn 
               v-else-if="props.row.status === 'checked_in' && props.row.license_plate"
               color="warning" 
               text-color="black"
               icon="logout" 
-              label="Ra" 
+              label="Xác nhận ra - Đang ở trong" 
               @click="confirmOut(props.row)" 
               dense
+              no-caps
             />
-            <!-- Khách checked_in nhưng không có xe sẽ không hiển thị nút Ra (tự động chuyển xuống bảng dưới) -->
+            
+            <!-- Trường hợp 3: Khách đã vào (không xe) - Hiển thị CHIP trạng thái -->
+            <q-chip 
+              v-else-if="props.row.status === 'checked_in'"
+              color="info" 
+              text-color="white"
+              dense
+              icon="how_to_reg"
+            >
+              Đang ở trong
+            </q-chip>
           </q-td>
         </template>
         
@@ -146,6 +137,15 @@
             <q-btn color="warning" text-color="black" icon="arrow_circle_up" label="Xác nhận ra" @click="confirmAssetCheckOut(props.row)" dense/>
           </q-td>
         </template>
+        
+        <template #body-cell-ticket_number="props">
+          <q-td :props="props">
+            <div class="text-h6 text-weight-bolder text-primary">
+              TS/{{ props.row.estimated_datetime ? 'HL' : 'KHL' }}/{{ new Date().getFullYear() }}/{{ String(props.row.id).padStart(3, '0') }}.{{ String((props.row.print_count || 0) + 1).padStart(2, '0') }}
+            </div>
+          </q-td>
+        </template>
+        
         <template #no-data>
             <div class="full-width row flex-center text-grey-7 q-gutter-sm q-pa-md">
                 <q-icon size="2em" name="inventory_2" />
@@ -361,10 +361,8 @@ const baseColumns = [
 // --- KẾT THÚC SỬA ĐỔI ---
 
 const activeGuestsColumns = [
-  // Cột "actions" được đưa lên đầu tiên
-  { name: 'actions', label: 'Hành động', field: 'actions', align: 'left' },
-  // Add status chip column
-  { name: 'status_chip', label: 'Trạng thái', field: 'status', align: 'left' },
+  // Gộp cột "actions" và "status" thành một
+  { name: 'actions', label: 'Trạng thái / Hành động', field: 'actions', align: 'center', style: 'width: 180px' },
   ...baseColumns
 ];
 
@@ -422,6 +420,7 @@ const assetBaseColumns = [
 ];
 const assetsPendingColumns = [
   { name: 'actions', label: 'Hành động', align: 'left', style: 'width: 150px' },
+  { name: 'ticket_number', label: 'Số phiếu', field: 'id', align: 'center', style: 'width: 130px' },
   ...assetBaseColumns
 ];
 const assetsCheckedInColumns = [

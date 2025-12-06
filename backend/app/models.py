@@ -112,7 +112,10 @@ class AssetLog(Base):
     
     # Manager Approvals
     vietnamese_manager_name = Column(String(128), nullable=True)
-    korean_manager_name = Column(String(128), nullable=True)
+    korean_manager_name = Column(String(255), nullable=True)
+    
+    # Print tracking
+    print_count = Column(Integer, default=0, nullable=False)  # Số lần in phiếu
     
     # Thông tin đăng ký
     destination = Column(String(255), index=True, default="")

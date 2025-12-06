@@ -14,7 +14,7 @@
         <!-- Ticket Number only -->
         <div class="flex column" style="width: 250px; align-items: flex-end;">
           <div class="q-pa-xs flex flex-center">
-             <span class="text-italic" style="font-size: 12px;">{{ ticketNumberLabel }}</span>
+             <span class="text-italic text-weight-medium" style="font-size: 16px;">{{ ticketNumberLabel }}</span>
           </div>
         </div>
       </div>
@@ -76,7 +76,9 @@
 
       <!-- Row 7: Return Dates -->
       <div class="grid-row border-bottom flex">
-         <div class="border-right flex column q-pa-xs" style="width: 50%;">
+        <!-- Hiển thị khi tài sản CÓ hoàn lại -->
+        <template v-if="isReturnable">
+         <div class="border-right flex column q-pa-xs" style="width: 50%; min-height: 80px;">
             <div class="text-caption q-mb-xs">Expected Return Date/ Ngày dự kiến trả:</div>
             <div class="bg-yellow-2 q-px-sm q-py-xs flex items-center justify-center full-width">
                 <template v-if="mode === 'edit'">
@@ -97,12 +99,25 @@
                <span v-else>{{ formatDate(localData.estimated_datetime) }}</span>
             </div>
          </div>
-         <div class="flex column q-pa-xs" style="width: 50%;">
+         <div class="flex column q-pa-xs" style="width: 50%; min-height: 80px;">
             <div class="text-caption q-mb-xs">Actual Return Date/ Ngày trả thực tế:</div>
             <div class="bg-yellow-2 q-px-sm q-py-xs flex items-center justify-center full-width">
                <span class="text-weight-bold">{{ formatDate(localData.check_in_back_time) }}</span>
             </div>
          </div>
+        </template>
+        
+        <!-- Hiển thị khi tài sản KHÔNG hoàn lại -->
+        <template v-else>
+          <div class="flex column q-pa-md full-width items-center justify-center" style="min-height: 80px;">
+            <div class="text-h6 text-center text-weight-bold text-red-9" style="line-height: 1.2;">
+              TÀI SẢN KHÔNG HOÀN LẠI
+            </div>
+            <div class="text-subtitle1 text-center text-weight-bold" style="line-height: 1.2;">
+              NON-RETURNABLE ASSET
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- Asset Table -->
@@ -278,7 +293,13 @@ const props = defineProps({
   assetId: {
     type: [Number, String],
     default: null
+  },
+  // === TÍNH NĂNG MỚI: Prop cho tài sản không hoàn lại ===
+  isReturnable: {
+    type: Boolean,
+    default: true // Mặc định là tài sản CÓ hoàn lại
   }
+  // === KẾT THÚC ===
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -366,10 +387,19 @@ const formattedDate = computed(() => {
 const ticketNumber = computed(() => {
   const year = new Date().getFullYear();
   if (!props.assetId) {
-    return `TS/${year}/...`;
+    return `TS/.../${year}/...`;
   }
+  
+  // Xác định loại phiếu dựa trên prop isReturnable
+  const ticketType = props.isReturnable ? 'HL' : 'KHL'; // HL = Hoàn lại, KHL = Không hoàn lại
+  
+  // xxx - số phiếu (ID), format 3 chữ số
   const idStr = String(props.assetId).padStart(3, '0');
-  return `TS/${year}/${idStr}.0`;
+  
+  // zz - số lần in (lấy từ database, +1 vì đang chuẩn bị in)
+  const printCount = String((props.modelValue?.print_count || 0) + 1).padStart(2, '0');
+  
+  return `TS/${ticketType}/${year}/${idStr}.${printCount}`;
 });
 
 const ticketNumberLabel = computed(() => {

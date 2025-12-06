@@ -77,7 +77,7 @@
               :color="getStatusColor(props.value)" 
               text-color="white" 
               dense
-              :label="getStatusLabel(props.value)"
+              :label="getStatusLabel(props.value, props.row)"
             />
           </q-td>
         </template>
@@ -312,7 +312,8 @@
               v-if="printAssetData" 
               :model-value="printAssetData" 
               :asset-id="printAssetData.id"
-              mode="print" 
+              mode="print"
+              :is-returnable="printAssetData.estimated_datetime !== null"
             />
           </q-card-section>
           
@@ -382,7 +383,20 @@ function printAsset(row) {
 }
 
 function triggerPrint() {
-  exportToPDF();
+  // Increment print count trước khi in
+  if (printAssetData.value?.id) {
+    api.post(`/assets/${printAssetData.value.id}/increment-print-count`)
+      .then(() => {
+        exportToPDF();
+      })
+      .catch(error => {
+        console.error('Failed to increment print count:', error);
+        // Vẫn in ngay cả khi API fail
+        exportToPDF();
+      });
+  } else {
+    exportToPDF();
+  }
 }
 
 // PDF Export Function
@@ -450,18 +464,25 @@ async function exportToPDF() {
     const date = new Date();
     const filename = `TaiSan_${assetId}_${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}.pdf`;
     
-    // Download PDF
-    pdf.save(filename);
+    // Tạo blob và mở PDF trong tab mới (UX liền mạch)
+    const pdfBlob = pdf.output('blob');
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    
+    // Mở PDF trong tab mới
+    window.open(blobUrl, '_blank');
+    
+    // Tùy chọn: vẫn download file nếu người dùng muốn
+    // pdf.save(filename);
     
     $q.loading.hide();
     
     // Show prominent success notification
     $q.notify({
       type: 'positive',
-      message: '✅ ĐÃ TẢI XUỐNG PDF THÀNH CÔNG!',
-      caption: `File: ${filename}`,
+      message: '✅ ĐÃ MỞ PDF THÀNH CÔNG!',
+      caption: `File: ${filename} - Đã mở trong tab mới`,
       position: 'center',
-      timeout: 3000,
+      timeout: 2000,
       textColor: 'white',
       color: 'positive',
       classes: 'text-h6',
@@ -513,7 +534,12 @@ function getStatusColor(status) {
   if (status === 'returned') return 'positive';
   return 'grey';
 }
-function getStatusLabel(status) {
+function getStatusLabel(status, row = null) {
+  // Trường hợp đặc biệt: Tài sản KHÔNG hoàn lại đã ra cổng
+  if (status === 'returned' && row && row.estimated_datetime === null) {
+    return 'Đã ra - Không hoàn lại';
+  }
+  
   const option = statusOptions.find(opt => opt.value === status);
   return option ? option.label : status;
 }

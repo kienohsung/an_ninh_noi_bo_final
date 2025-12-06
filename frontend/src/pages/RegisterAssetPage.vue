@@ -6,13 +6,28 @@
           <q-card-section class="row items-center justify-between">
             <div class="text-subtitle1">Đăng ký Tài sản Ra/Vào</div>
           </q-card-section>
+          
+          <!-- THÊM TABS -->
+          <q-separator />
+          <q-tabs
+            v-model="assetType"
+            dense
+            class="text-grey"
+            active-color="primary"
+            indicator-color="primary"
+            align="left"
+          >
+            <q-tab name="returnable" label="Tạm xuất / Tái nhập" icon="sync" />
+            <q-tab name="non_returnable" label="Xuất hẳn / Không hoàn lại" icon="send" />
+          </q-tabs>
         </q-card>
 
         <!-- WYSIWYG Form -->
         <AssetFormPaper 
           :model-value="form"
           @update:model-value="handleFormUpdate"
-          mode="edit" 
+          mode="edit"
+          :is-returnable="isReturnable"
         />
 
         <!-- Image Upload Section (Keep outside the paper form) -->
@@ -114,6 +129,20 @@ const selectedImages = ref(null)
 const imagePreviews = ref([])
 const lastCreatedAssetId = ref(null); // Track last created asset ID
 
+// === TÍNH NĂNG MỚI: State cho loại tài sản ===
+const assetType = ref('returnable') // 'returnable' hoặc 'non_returnable'
+
+// Computed: Xác định tài sản có hoàn lại không
+const isReturnable = computed(() => assetType.value === 'returnable')
+
+// Watcher: Reset estimated_datetime khi chuyển tab
+watch(assetType, (newType) => {
+  if (newType === 'non_returnable') {
+    form.estimated_datetime = null
+  }
+})
+// === KẾT THÚC TÍNH NĂNG MỚI ===
+
 // Initialize user data when auth is ready
 watch(() => auth.user, (user) => {
   if (user) {
@@ -166,12 +195,57 @@ async function onSubmit() {
         return;
     }
 
-    // Check date
-    const dateValue = form.estimated_datetime;
-    if (!dateValue || (typeof dateValue === 'string' && dateValue.trim() === '')) {
+    // === CẬP NHẬT: Validation ngày theo loại tài sản ===
+    if (isReturnable.value) {
+      // Tài sản CÓ hoàn lại: BẮT BUỘC có ngày
+      const dateValue = form.estimated_datetime;
+      if (!dateValue || (typeof dateValue === 'string' && dateValue.trim() === '')) {
         $q.notify({ type: 'negative', message: 'Vui lòng chọn ngày dự kiến.' });
         isSubmitting.value = false;
         return;
+      }
+      
+      // Kiểm tra ngày phải >= ngày hiện tại
+      const selectedDate = new Date(dateValue.replace(/\//g, '-'));
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Reset về đầu ngày để so sánh chính xác
+      
+      if (selectedDate < today) {
+        $q.notify({ 
+          type: 'negative', 
+          message: 'Ngày dự kiến phải lớn hơn hoặc bằng ngày hiện tại.' 
+        });
+        isSubmitting.value = false;
+        return;
+      }
+    } else {
+      // Tài sản KHÔNG hoàn lại: Đảm bảo null
+      form.estimated_datetime = null;
+      
+      // === VACCINE: CONFIRM DIALOG ===
+      const confirmed = await new Promise((resolve) => {
+        $q.dialog({
+          title: '⚠️ Xác nhận đăng ký',
+          message: 'Bạn đang đăng ký tài sản mang đi KHÔNG TRẢ LẠI. Bạn có chắc chắn không?',
+          cancel: {
+            label: 'Hủy',
+            color: 'grey',
+            flat: true
+          },
+          ok: {
+            label: 'Đồng ý',
+            color: 'negative'
+          },
+          persistent: true
+        }).onOk(() => resolve(true))
+          .onCancel(() => resolve(false))
+      });
+      
+      if (!confirmed) {
+        isSubmitting.value = false;
+        return;
+      }
+      // === KẾT THÚC VACCINE ===
     }
 
     if (!selectedImages.value || selectedImages.value.length === 0) {

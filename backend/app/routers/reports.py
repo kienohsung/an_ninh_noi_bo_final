@@ -418,9 +418,14 @@ def asset_control(
             base_query = base_query.filter(models.AssetLog.created_at <= end)
         
         # Đếm tài sản đang ra ngoài
+        # === VACCINE #1: Loại bỏ tài sản KHÔNG hoàn lại khỏi KPI ===
+        # Chỉ tính tài sản CÓ ngày dự kiến về vào Return Rate
+        # Tài sản không hoàn lại (estimated_datetime IS NULL) không nên tính vào tỷ lệ hoàn trả
         total_out = base_query.filter(
-            models.AssetLog.status.in_(['pending_out', 'checked_out'])
+            models.AssetLog.status.in_(['pending_out', 'checked_out']),
+            models.AssetLog.estimated_datetime != None  # QUAN TRỌNG: Loại bỏ tài sản không hoàn lại
         ).count() or 0
+        # === KẾT THÚC VACCINE #1 ===
         
         # Đếm tài sản đã hoàn trả
         total_returned = base_query.filter(

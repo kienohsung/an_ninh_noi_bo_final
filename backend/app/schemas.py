@@ -124,6 +124,9 @@ class AssetLogDisplay(AssetLogBase):
     check_out_time: Optional[datetime] = None
     check_in_back_time: Optional[datetime] = None
     
+    # Print tracking
+    print_count: int = 0  # Số lần in phiếu
+    
     # Thông tin lồng ghép từ user
     registered_by: UserRead
     check_out_by: Optional[UserRead] = None

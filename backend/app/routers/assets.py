@@ -34,13 +34,9 @@ async def create_asset(
     if current_user.role not in ["admin", "manager", "staff"]:
         raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     
-    # === CẢI TIẾN 3: Validate estimated_datetime bắt buộc ===
-    if not asset_in.estimated_datetime:
-        raise HTTPException(
-            status_code=400,
-            detail="Ngày giờ dự kiến là bắt buộc"
-        )
-    # === KẾT THÚC CẢI TIẾN 3 ===
+    # === TÍNH NĂNG MỚI: Cho phép tài sản KHÔNG hoàn lại (estimated_datetime có thể null) ===
+    # Không còn validate bắt buộc estimated_datetime
+    # === KẾT THÚC ===
     
     # Tạo bản ghi CSDL - explicitly map all fields to avoid schema mismatch
     db_asset = models.AssetLog(
@@ -53,12 +49,20 @@ async def create_asset(
         asset_description=asset_in.asset_description,  # FIX: Use correct field
         quantity=asset_in.quantity,
         expected_return_date=asset_in.expected_return_date,
-        estimated_datetime=asset_in.estimated_datetime,  # CẢI TIẾN 3
+        estimated_datetime=asset_in.estimated_datetime,  # Có thể null cho tài sản không hoàn lại
         vietnamese_manager_name=asset_in.vietnamese_manager_name,  # FIX: Add manager names
         korean_manager_name=asset_in.korean_manager_name,  # FIX: Add manager names
         status=models.ASSET_STATUS_PENDING_OUT,
         created_at=models.get_local_time()
     )
+    
+    # === ĐỒNG BỘ DỮ LIỆU: Auto-sync expected_return_date từ estimated_datetime ===
+    # Đảm bảo Reports không thiếu dữ liệu (Reports query dựa trên expected_return_date)
+    # Frontend chỉ gửi estimated_datetime, backend tự động extract ngày
+    if asset_in.estimated_datetime and not asset_in.expected_return_date:
+        db_asset.expected_return_date = asset_in.estimated_datetime.date()
+    # === KẾT THÚC ĐỒNG BỘ ===
+    
     db.add(db_asset)
     db.commit()
     db.refresh(db_asset)
@@ -304,7 +308,8 @@ async def confirm_asset_checkout(
 ):
     """
     Bảo vệ xác nhận tài sản đi RA.
-    Chuyển trạng thái từ 'pending_out' -> 'checked_out'.
+    - Nếu tài sản CÓ hoàn lại: Chuyển 'pending_out' -> 'checked_out'
+    - Nếu tài sản KHÔNG hoàn lại: Chuyển 'pending_out' -> 'returned' (lưu trữ ngay)
     """
     # Kiểm tra role thủ công
     if current_user.role not in ["admin", "guard"]:
@@ -318,16 +323,31 @@ async def confirm_asset_checkout(
     if db_asset.status != models.ASSET_STATUS_PENDING_OUT:
         raise HTTPException(status_code=400, detail=f"Tài sản đang ở trạng thái '{db_asset.status}', không thể xác nhận RA.")
 
-    # Cập nhật trạng thái
-    db_asset.status = models.ASSET_STATUS_CHECKED_OUT
-    db_asset.check_out_time = models.get_local_time()
-    db_asset.check_out_by_user_id = current_user.id
+    # === LOGIC MỚI: Kiểm tra tài sản có hoàn lại không ===
+    is_returnable = db_asset.estimated_datetime is not None
+    
+    if is_returnable:
+        # Tài sản CÓ hoàn lại: Chuyển sang checked_out (chờ về)
+        db_asset.status = models.ASSET_STATUS_CHECKED_OUT
+        db_asset.check_out_time = models.get_local_time()
+        db_asset.check_out_by_user_id = current_user.id
+        status_msg = "HÀNG ĐÃ RA"
+    else:
+        # Tài sản KHÔNG hoàn lại: Chuyển thẳng sang returned (lưu trữ luôn)
+        db_asset.status = models.ASSET_STATUS_RETURNED
+        db_asset.check_out_time = models.get_local_time()
+        db_asset.check_out_by_user_id = current_user.id
+        # Ghi cả thời gian về (cùng lúc) vì tài sản không quay lại
+        db_asset.check_in_back_time = models.get_local_time()
+        db_asset.check_in_back_by_user_id = current_user.id
+        status_msg = "HÀNG ĐÃ RA (KHÔNG VỀ)"
+    
     db.commit()
 
     # Gửi thông báo Telegram
     try:
         msg = f"""
-[ASSET CHECK-OUT] - HÀNG ĐÃ RA
+[ASSET CHECK-OUT] - {status_msg}
 - Bảo vệ: {current_user.full_name}
 - Người ĐK: {db_asset.registered_by.full_name}
 - Bộ phận: {db_asset.department}
@@ -342,7 +362,7 @@ async def confirm_asset_checkout(
     background_tasks.add_task(
         send_asset_event_to_archive_background,
         db_asset.id,
-        "Xác nhận ra cổng",
+        "Xác nhận ra cổng" if is_returnable else "Xác nhận ra cổng (không về)",
         current_user.id
     )
     # === KẾT THÚC CẢI TIẾN 4 ===
