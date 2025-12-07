@@ -12,6 +12,9 @@ from ..auth import require_roles
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_roles("admin", "manager"))])
 logger = logging.getLogger(__name__)
 
+# === SECURITY EVENT FILTER CONSTANT ===
+SECURITY_EVENT_STATUS = "security_event"
+
 def apply_time_filters(query, model, start: datetime | None, end: datetime | None):
     """
     Áp dụng bộ lọc thời gian cho một câu truy vấn SQLAlchemy.
@@ -112,10 +115,12 @@ def assets_by_status(
         }
     """
     try:
-        # Build query
+        # Build query - VACCINE: Loại trừ security events
         query = db.query(
             models.AssetLog.status,
             func.count(models.AssetLog.id).label('count')
+        ).filter(
+            models.AssetLog.status != SECURITY_EVENT_STATUS
         )
         
         # Apply date filters if provided (filter by created_at)
@@ -410,8 +415,10 @@ def asset_control(
         tz = pytz.timezone(settings.TZ)
         today = datetime.now(tz).date()
         
-        # Query base với date filter nếu có
-        base_query = db.query(models.AssetLog)
+        # Query base với date filter nếu có - VACCINE: Loại trừ security events
+        base_query = db.query(models.AssetLog).filter(
+            models.AssetLog.status != SECURITY_EVENT_STATUS
+        )
         if start:
             base_query = base_query.filter(models.AssetLog.created_at >= start)
         if end:
@@ -519,8 +526,10 @@ def system_overview(
             guest_query = guest_query.filter(models.Guest.created_at <= end)
         total_guests = guest_query.scalar() or 0
         
-        # Tổng assets (có thể filter theo date)
-        asset_query = db.query(func.count(models.AssetLog.id))
+        # Tổng assets (có thể filter theo date) - VACCINE: Loại trừ security events
+        asset_query = db.query(func.count(models.AssetLog.id)).filter(
+            models.AssetLog.status != SECURITY_EVENT_STATUS
+        )
         if start:
             asset_query = asset_query.filter(models.AssetLog.created_at >= start)
         if end:
@@ -533,10 +542,11 @@ def system_overview(
             models.Guest.status == 'checked_in'
         ).scalar() or 0
         
-        # Assets active hôm nay (status != returned)
+        # Assets active hôm nay (status != returned) - VACCINE: Loại trừ security events
         active_assets_today = db.query(func.count(models.AssetLog.id)).filter(
             models.AssetLog.created_at >= today_start,
-            models.AssetLog.status != 'returned'
+            models.AssetLog.status != 'returned',
+            models.AssetLog.status != SECURITY_EVENT_STATUS
         ).scalar() or 0
         
         # Avg checkin time (phút) - placeholder logic
@@ -583,9 +593,10 @@ def user_activity(
                 guests_query = guests_query.filter(models.Guest.created_at <= end_date)
             guests_count = guests_query.scalar() or 0
             
-            # Đếm assets đã đăng ký
+            # Đếm assets đã đăng ký - VACCINE: Loại trừ security events
             assets_query = db.query(func.count(models.AssetLog.id)).filter(
-                models.AssetLog.registered_by_user_id == user.id
+                models.AssetLog.registered_by_user_id == user.id,
+                models.AssetLog.status != SECURITY_EVENT_STATUS
             )
             if start_date:
                 assets_query = assets_query.filter(models.AssetLog.created_at >= start_date)

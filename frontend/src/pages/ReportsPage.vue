@@ -60,6 +60,23 @@
       </q-card>
     </q-expansion-item>
 
+    <!-- Sự kiện An ninh -->
+    <q-expansion-item
+      ref="securityEventExpansion"
+      v-model="expandedSecurityEvent"
+      class="q-mt-sm"
+      icon="report_problem"
+      label="Sự kiện An ninh"
+      header-class="bg-orange-2 text-weight-medium"
+      dense
+    >
+      <q-card flat bordered>
+        <q-card-section>
+          <SecurityEventTable />
+        </q-card-section>
+      </q-card>
+    </q-expansion-item>
+
     <!-- Guest Export Dialog -->
     <q-dialog v-model="showExportDialog">
       <q-card style="min-width: 400px">
@@ -330,6 +347,7 @@ import { ref, computed, nextTick, watch } from 'vue'
 import { useQuasar, date } from 'quasar'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
+import SecurityEventTable from '../components/SecurityEventTable.vue'
 
 const $q = useQuasar()
 const auth = useAuthStore()
@@ -347,6 +365,10 @@ const expandedAssetReport = ref(false)
 const assetReportExpansion = ref(null)
 const showAssetExportDialog = ref(false)
 const isAssetExporting = ref(false)
+
+// Security Event UI State
+const expandedSecurityEvent = ref(false)
+const securityEventExpansion = ref(null)
 
 // Export filters
 const exportFilters = ref({

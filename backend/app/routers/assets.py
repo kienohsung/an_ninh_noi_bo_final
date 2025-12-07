@@ -19,6 +19,9 @@ router = APIRouter(
     tags=["Assets"]
 )
 
+# === SECURITY EVENT FILTER CONSTANT ===
+SECURITY_EVENT_STATUS = "security_event"
+
 # === ENDPOINT 1: [POST] /assets (Tạo mới) ===
 @router.post("", response_model=schemas.AssetLogDisplay, status_code=201)
 async def create_asset(
@@ -234,6 +237,7 @@ def get_assets(
         .options(joinedload(models.AssetLog.check_out_by))
         .options(joinedload(models.AssetLog.check_in_back_by))
         .options(joinedload(models.AssetLog.images))
+        .filter(models.AssetLog.status != SECURITY_EVENT_STATUS)  # VACCINE: Loại trừ security events
         .order_by(models.AssetLog.created_at.desc())
     )
 
@@ -277,6 +281,7 @@ def get_assets_for_guard_gate(
         .options(joinedload(models.AssetLog.registered_by))
         .options(joinedload(models.AssetLog.images))
         .filter(
+            models.AssetLog.status != SECURITY_EVENT_STATUS,  # VACCINE: Loại trừ security events
             or_(
                 models.AssetLog.status == models.ASSET_STATUS_PENDING_OUT,
                 models.AssetLog.status == models.ASSET_STATUS_CHECKED_OUT
@@ -319,6 +324,10 @@ async def confirm_asset_checkout(
     
     if not db_asset:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi tài sản.")
+    
+    # VACCINE: Ngăn chặn checkout cho security events
+    if db_asset.status == SECURITY_EVENT_STATUS:
+        raise HTTPException(status_code=400, detail="Không thể xác nhận checkout cho sự kiện an ninh.")
     
     if db_asset.status != models.ASSET_STATUS_PENDING_OUT:
         raise HTTPException(status_code=400, detail=f"Tài sản đang ở trạng thái '{db_asset.status}', không thể xác nhận RA.")
@@ -390,6 +399,10 @@ async def confirm_asset_return(
     
     if not db_asset:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi tài sản.")
+    
+    # VACCINE: Ngăn chặn checkin cho security events
+    if db_asset.status == SECURITY_EVENT_STATUS:
+        raise HTTPException(status_code=400, detail="Không thể xác nhận return cho sự kiện an ninh.")
         
     if db_asset.status != models.ASSET_STATUS_CHECKED_OUT:
         raise HTTPException(status_code=400, detail=f"Tài sản đang ở trạng thái '{db_asset.status}', không thể xác nhận VỀ.")
@@ -445,7 +458,10 @@ def get_my_assets(
         .options(joinedload(models.AssetLog.check_out_by))
         .options(joinedload(models.AssetLog.check_in_back_by))
         .options(joinedload(models.AssetLog.images))
-        .filter(models.AssetLog.registered_by_user_id == current_user.id)
+        .filter(
+            models.AssetLog.registered_by_user_id == current_user.id,
+            models.AssetLog.status != SECURITY_EVENT_STATUS  # VACCINE: Loại trừ security events
+        )
         .order_by(models.AssetLog.created_at.desc())
     )
     
@@ -556,6 +572,8 @@ def export_assets(
             models.User.username.label("registered_by_username")
         ).join(
             models.User, models.AssetLog.registered_by_user_id == models.User.id
+        ).filter(
+            models.AssetLog.status != SECURITY_EVENT_STATUS  # VACCINE: Loại trừ security events
         ).options(joinedload(models.AssetLog.check_out_by)).options(joinedload(models.AssetLog.check_in_back_by))
 
         # Role-based filtering
