@@ -72,6 +72,13 @@
           <q-item-section avatar><q-icon name="group"/></q-item-section>
           <q-item-section>Người dùng</q-item-section>
         </q-item>
+
+        <q-separator v-if="['admin','manager'].includes(auth.user?.role)" />
+
+        <q-item v-if="['admin','manager'].includes(auth.user?.role)" clickable v-ripple to="/purchasing">
+          <q-item-section avatar><q-icon name="shopping_cart"/></q-item-section>
+          <q-item-section>Quản lý Mua bán</q-item-section>
+        </q-item>
       </q-list>
     </q-drawer>
 

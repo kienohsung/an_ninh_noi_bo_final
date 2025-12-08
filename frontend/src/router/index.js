@@ -17,6 +17,7 @@ import VehicleLogPage from '../pages/VehicleLogPage.vue'
 import RegisterAssetPage from '../pages/RegisterAssetPage.vue'
 import AssetManagementPage from '../pages/AssetManagementPage.vue'
 import ReportsPage from '../pages/ReportsPage.vue'
+import PurchasingIndex from '../pages/purchasing/PurchasingIndex.vue'
 
 
 function defaultRouteForRole(role) {
@@ -60,8 +61,13 @@ const routes = [
         path: 'asset-management',
         component: AssetManagementPage,
         meta: { roles: ['admin', 'manager', 'staff'] }
+      },
+      {
+        path: 'purchasing',
+        component: PurchasingIndex,
+        meta: { roles: ['admin', 'manager'] }
       }
-      // === KẾT THÚC CHECKLIST 2.9 ===
+      // === KẾT THÚC ROUTES ===
     ]
   }
 ]

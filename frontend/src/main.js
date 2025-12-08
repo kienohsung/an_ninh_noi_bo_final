@@ -29,7 +29,43 @@ app.use(VueApexCharts);
 
 app.use(router)
 
-const auth = useAuthStore()
+const auth = useAuthStore();
+/* --- CLEAR CACHE ON STARTUP (Prevent White Screen) --- */
+(async () => {
+  try {
+    console.log('[System] Cleaning up caches...');
+
+    // 1. Backup critical keys
+    const whitelist = ['token', 'refreshToken', 'guard_audio_enabled'];
+    const backups = {};
+    whitelist.forEach(key => {
+      const val = localStorage.getItem(key);
+      if (val) backups[key] = val;
+    });
+
+    // 2. Clear storages
+    localStorage.clear();
+    sessionStorage.clear();
+
+    // 3. Restore backups
+    Object.entries(backups).forEach(([key, val]) => {
+      localStorage.setItem(key, val);
+    });
+
+    // 4. Unregister Service Workers (Force fresh load)
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        await registration.unregister();
+      }
+    }
+    console.log('[System] Cache cleared. App ready.');
+  } catch (e) {
+    console.warn('[System] Cache clear warning:', e);
+  }
+})();
+/* ---------------------------------------------------- */
+
 // Bootstrap authentication
 auth.bootstrap().then(() => {
   app.mount('#app')
