@@ -8,7 +8,7 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import SessionLocal
-from . import models, schemas
+from app import models, schemas
 
 router = APIRouter(tags=["auth"])
 

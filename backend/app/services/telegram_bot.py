@@ -6,8 +6,8 @@ from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from ..config import settings
-from ..database import SessionLocal
+from ..core.config import settings
+from ..core.database import SessionLocal
 from ..models import User, get_local_time
 from ..utils.notifications import send_telegram_message
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import os
 
 from .. import models
-from ..auth import get_current_user, require_roles
+from ..core.auth import get_current_user, require_roles
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -25,10 +25,10 @@ def validate_admin_delete_password(
     Validate password for admin delete operations
     This prevents password from being exposed in frontend code
     """
-    # Get password from environment variable or use default
-    admin_password = os.getenv("ADMIN_DELETE_PASSWORD", "Kienhp@@123")
+    from ..modules.admin.service import admin_service
+    is_valid = admin_service.validate_delete_password(payload.password)
     
     return {
-        "valid": payload.password == admin_password,
-        "message": "Password validated" if payload.password == admin_password else "Invalid password"
+        "valid": is_valid,
+        "message": "Password validated" if is_valid else "Invalid password"
     }

@@ -10,10 +10,10 @@ from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload # Thêm joinedload
 
 # SỬA LỖI: Thay đổi đường dẫn import từ "." thành ".." để trỏ ra thư mục app
-from ..database import SessionLocal
+from ..core.database import SessionLocal
 from .. import models
 from ..models import get_local_time
-from ..config import settings
+from ..core.config import settings
 
 # Dữ liệu đã được nạp từ .env vào settings trong main.py
 TELEGRAM_ENABLED = settings.NOTIFY_TELEGRAM_ENABLED

@@ -2,19 +2,6 @@ import sys
 import os
 import logging
 
-# Add the parent directory to sys.path to allow imports from app
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# --- FIX PATHS ---
-# Force absolute paths for DB and Credentials to avoid CWD issues
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(BASE_DIR, 'security_v2_3.db')}"
-os.environ["GSHEETS_CREDENTIALS_PATH"] = os.path.join(BASE_DIR, "credentials.json")
-
-from backend.app.database import SessionLocal
-from backend.app.models import User
-from backend.app.services.gsheets_reader import _get_service
-from backend.app.config import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

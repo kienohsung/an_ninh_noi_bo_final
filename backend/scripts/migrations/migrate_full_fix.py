@@ -2,7 +2,8 @@ import sqlite3
 import os
 
 # Đường dẫn đến file CSDL
-DB_FILE = os.path.join(os.path.dirname(__file__), 'security_v2_3.db')
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_FILE = os.path.join(BASE_DIR, 'security_v2_3.db')
 
 if not os.path.exists(DB_FILE):
     print(f"LỖI: Không tìm thấy file CSDL tại '{DB_FILE}'.")

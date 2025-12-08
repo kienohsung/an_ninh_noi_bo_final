@@ -10,19 +10,6 @@ with open('doc/Bug_Fixes_Documentation.md', 'r', encoding='utf-8') as f:
 # New table of contents entry
 new_toc_entry = "1.  [04/12/2025 - Report Module Implementation Bugs](#04122025-report-module-bugs)\n"
 
-# Find the table of contents section and insert new entry
-toc_pattern = r'(# Mục Lục \(Table of Contents\)\n\n)'
-replacement = r'\g<1>' + new_toc_entry
-
-# Update numbering for existing entries
-content = re.sub(toc_pattern, replacement, content)
-
-# Update all subsequent numbering
-lines = content.split('\n')
-in_toc = False
-toc_counter = 2
-new_lines = []
-
 for line in lines:
     if '# Mục Lục (Table of Contents)' in line:
         in_toc = True

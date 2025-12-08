@@ -62,10 +62,6 @@ api.interceptors.response.use(
         // Không có refresh token, không thể làm mới, buộc đăng xuất
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
-        // FIXED: Không redirect nếu đã ở login page
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login';
-        }
         return Promise.reject(error);
       }
 
@@ -91,10 +87,6 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
-        // FIXED: Không redirect nếu đã ở login page
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login';
-        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

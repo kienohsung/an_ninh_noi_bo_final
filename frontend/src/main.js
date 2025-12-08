@@ -18,6 +18,35 @@ import { useAuthStore } from './stores/auth'
 
 const app = createApp(App)
 
+/* --- CLEAR CACHE ON STARTUP (Prevent White Screen) --- */
+// Must clear BEFORE creating Pinia store to ensure clean slate
+try {
+  console.log('[System] Cleaning up caches...');
+
+  // 1. Backup critical keys
+  // 1. Backup critical keys
+  const whitelist = ['token', 'refreshToken', 'guard_audio_enabled'];
+  const backups = {};
+  whitelist.forEach(key => {
+    const val = localStorage.getItem(key);
+    if (val) backups[key] = val;
+  });
+
+  // 2. Clear storages
+  localStorage.clear();
+  sessionStorage.clear();
+
+  // 3. Restore backups
+  Object.entries(backups).forEach(([key, val]) => {
+    localStorage.setItem(key, val);
+  });
+
+  console.log('[System] Cache cleared. App ready.');
+} catch (e) {
+  console.warn('[System] Cache clear warning:', e);
+}
+/* ---------------------------------------------------- */
+
 app.use(createPinia())
 app.use(Quasar, {
   plugins: { Dialog, Notify, Loading },
@@ -29,45 +58,24 @@ app.use(VueApexCharts);
 
 app.use(router)
 
+// Initialize Auth Store AFTER cleanup
 const auth = useAuthStore();
-/* --- CLEAR CACHE ON STARTUP (Prevent White Screen) --- */
-(async () => {
-  try {
-    console.log('[System] Cleaning up caches...');
 
-    // 1. Backup critical keys
-    const whitelist = ['token', 'refreshToken', 'guard_audio_enabled'];
-    const backups = {};
-    whitelist.forEach(key => {
-      const val = localStorage.getItem(key);
-      if (val) backups[key] = val;
-    });
-
-    // 2. Clear storages
-    localStorage.clear();
-    sessionStorage.clear();
-
-    // 3. Restore backups
-    Object.entries(backups).forEach(([key, val]) => {
-      localStorage.setItem(key, val);
-    });
-
-    // 4. Unregister Service Workers (Force fresh load)
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (const registration of registrations) {
-        await registration.unregister();
-      }
-    }
-    console.log('[System] Cache cleared. App ready.');
-  } catch (e) {
-    console.warn('[System] Cache clear warning:', e);
-  }
-})();
-/* ---------------------------------------------------- */
 
 // Bootstrap authentication
-auth.bootstrap().then(() => {
-  app.mount('#app')
-})
+// Race bootstrap against a 1-second timeout to ensure App always mounts
+const mountApp = () => {
+  if (app._instance) return; // Already mounted
+  app.mount('#app');
+};
+
+Promise.race([
+  auth.bootstrap(),
+  new Promise(resolve => setTimeout(resolve, 1000))
+]).then(() => {
+  mountApp();
+}).catch(err => {
+  console.error("[Main] Bootstrap Critical Error:", err);
+  mountApp();
+});
 

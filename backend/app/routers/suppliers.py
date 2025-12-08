@@ -1,102 +1,92 @@
-# File: security_mgmt_dev/backend/app/routers/suppliers.py
+# File: backend/app/routers/suppliers.py
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Response
 from sqlalchemy.orm import Session
-import pandas as pd
-import io
 import logging
 
 from .. import models, schemas
-from ..deps import get_db
-from ..auth import require_roles
+from ..core.deps import get_db
+from ..core.auth import require_roles
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"], dependencies=[Depends(require_roles("admin", "manager"))])
 logger = logging.getLogger(__name__)
 
 @router.post("/", response_model=schemas.SupplierRead)
 def create_supplier(payload: schemas.SupplierCreate, db: Session = Depends(get_db)):
-    if db.query(models.Supplier).filter(models.Supplier.name == payload.name).first():
-        raise HTTPException(status_code=400, detail="Supplier exists")
-    s = models.Supplier(name=payload.name)
-    db.add(s); db.commit(); db.refresh(s)
-    return s
+    try:
+        from ..modules.supplier.service import supplier_service
+        return supplier_service.create_supplier(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/", response_model=list[schemas.SupplierRead])
 def list_suppliers(db: Session = Depends(get_db)):
-    return db.query(models.Supplier).all()
+    from ..modules.supplier.service import supplier_service
+    return supplier_service.list_suppliers(db)
 
 @router.put("/{supplier_id}", response_model=schemas.SupplierRead)
 def update_supplier(supplier_id: int, payload: schemas.SupplierUpdate, db: Session = Depends(get_db)):
-    s = db.query(models.Supplier).get(supplier_id)
+    from ..modules.supplier.service import supplier_service
+    s = supplier_service.update_supplier(db, supplier_id, payload)
     if not s:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    if payload.name is not None:
-        s.name = payload.name
-    db.commit(); db.refresh(s); return s
+    return s
 
 @router.delete("/{supplier_id}")
 def delete_supplier(supplier_id: int, db: Session = Depends(get_db)):
-    s = db.query(models.Supplier).get(supplier_id)
-    if not s:
+    from ..modules.supplier.service import supplier_service
+    if not supplier_service.delete_supplier(db, supplier_id):
         raise HTTPException(status_code=404, detail="Supplier not found")
-    db.delete(s); db.commit(); return {"ok": True}
+    return {"ok": True}
 
 @router.post("/{supplier_id}/plates", response_model=schemas.SupplierPlateRead)
 def add_plate(supplier_id: int, payload: schemas.SupplierPlateCreate, db: Session = Depends(get_db)):
-    s = db.query(models.Supplier).get(supplier_id)
-    if not s:
+    from ..modules.supplier.service import supplier_service
+    p = supplier_service.add_plate(db, supplier_id, payload)
+    if not p:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    p = models.SupplierPlate(supplier_id=supplier_id, plate=payload.plate.upper())
-    db.add(p); db.commit(); db.refresh(p); return p
+    return p
 
 @router.get("/{supplier_id}/plates", response_model=list[schemas.SupplierPlateRead])
 def list_plates(supplier_id: int, db: Session = Depends(get_db)):
-    return db.query(models.SupplierPlate).filter_by(supplier_id=supplier_id).all()
+    from ..modules.supplier.service import supplier_service
+    return supplier_service.list_plates(db, supplier_id)
 
 @router.delete("/{supplier_id}/plates/{plate_id}")
 def delete_plate(supplier_id: int, plate_id: int, db: Session = Depends(get_db)):
-    p = db.query(models.SupplierPlate).get(plate_id)
-    if not p or p.supplier_id != supplier_id:
+    from ..modules.supplier.service import supplier_service
+    if not supplier_service.delete_plate(db, supplier_id, plate_id):
         raise HTTPException(status_code=404, detail="Plate not found")
-    db.delete(p); db.commit(); return {"ok": True}
+    return {"ok": True}
 
 @router.get("/export/xlsx", dependencies=[Depends(require_roles("admin", "manager"))])
 def export_suppliers(db: Session = Depends(get_db)):
-    df = pd.read_sql(db.query(models.Supplier).statement, db.bind)
-    bio = io.BytesIO()
-    df.to_excel(bio, index=False, sheet_name="suppliers")
-    bio.seek(0)
-    headers = {"Content-Disposition": "attachment; filename=suppliers_export.xlsx"}
-    return Response(bio.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+    from ..modules.supplier.service import supplier_service
+    try:
+        bio = supplier_service.export_suppliers(db)
+        headers = {"Content-Disposition": "attachment; filename=suppliers_export.xlsx"}
+        return Response(bio.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+    except Exception as e:
+        logger.error(f"Export failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Export failed")
 
 @router.post("/import/xlsx", dependencies=[Depends(require_roles("admin"))])
 async def import_suppliers(db: Session = Depends(get_db), file: UploadFile = File(...)):
+    from ..modules.supplier.service import supplier_service
     try:
-        df = pd.read_excel(await file.read()).fillna('')
+        content = await file.read()
+        supplier_service.import_suppliers(db, content)
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Failed to read Excel file: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Invalid Excel file: {e}")
-    
-    for _, row in df.iterrows():
-        try:
-            if not row.get("name"):
-                logger.warning(f"Skipping row due to missing name: {row.to_dict()}")
-                continue
-            if not db.query(models.Supplier).filter_by(name=row["name"]).first():
-                db.add(models.Supplier(name=row["name"]))
-        except Exception as e:
-            logger.error(f"Failed to process row for supplier import: {row.to_dict()}", exc_info=True)
-            continue
-            
-    db.commit()
-    return {"ok": True}
+        logger.error(f"Import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Import failed")
 
 @router.post("/clear", dependencies=[Depends(require_roles("admin"))])
 def clear_suppliers(db: Session = Depends(get_db)):
+    from ..modules.supplier.service import supplier_service
     try:
-        db.query(models.SupplierPlate).delete(synchronize_session=False)
-        db.query(models.Supplier).delete(synchronize_session=False)
-        db.commit()
+        supplier_service.clear_suppliers(db)
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to clear suppliers: {e}")
     return {"ok": True}

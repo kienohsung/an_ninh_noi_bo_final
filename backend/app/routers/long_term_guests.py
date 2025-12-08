@@ -7,8 +7,8 @@ from typing import List
 import logging  # Thêm logging cho Cải tiến 1
 
 from .. import models, schemas
-from ..deps import get_db
-from ..auth import get_current_user
+from ..core.deps import get_db
+from ..core.auth import get_current_user
 from ..models import get_local_time
 
 router = APIRouter(prefix="/long-term-guests", tags=["long-term-guests"])
@@ -19,60 +19,19 @@ def create_long_term_guest(
     db: Session = Depends(get_db), 
     user: models.User = Depends(get_current_user)
 ):
-    # Validate start and end dates
-    if payload.end_date < payload.start_date:
-        raise HTTPException(status_code=400, detail="End date cannot be earlier than start date.")
-
-    db_long_term_guest = models.LongTermGuest(
-        **payload.model_dump(),
-        registered_by_user_id=user.id
-    )
-    db.add(db_long_term_guest)
-    db.commit()
-
-    # --- CẢI TIẾN: Đồng bộ logic chống trùng ---
-    # Ngay khi tạo, kiểm tra và tạo một bản ghi Guest cho ngày hôm nay nếu cần
-    today = get_local_time().date()
-    if db_long_term_guest.start_date <= today <= db_long_term_guest.end_date:
-        existing_guest = db.query(models.Guest).filter(
-            models.Guest.full_name == payload.full_name,
-            models.Guest.id_card_number == (payload.id_card_number or ""),
-            func.date(models.Guest.created_at) == today,
-            models.Guest.registered_by_user_id == user.id
-        ).first()
-
-        if not existing_guest:
-            guest_for_today = models.Guest(
-                full_name=payload.full_name,
-                id_card_number=payload.id_card_number or "",
-                company=payload.company or "",
-                reason=payload.reason or "",
-                license_plate=payload.license_plate or "",
-                supplier_name=payload.supplier_name or "",
-                status="pending",
-                # --- NÂNG CẤP: Thay estimated_time bằng estimated_datetime ---
-                # (Đã xóa estimated_time)
-                estimated_datetime=payload.estimated_datetime, # Sao chép datetime
-                # --- KẾT THÚC NÂNG CẤP ---
-                registered_by_user_id=user.id,
-                created_at=get_local_time() # Ghi nhận thời gian tạo thực tế
-            )
-            db.add(guest_for_today)
-            db.commit()
-
-    db.refresh(db_long_term_guest)
-    return db_long_term_guest
+    try:
+        from ..modules.guest.service import long_term_guest_service
+        return long_term_guest_service.create_long_term_guest(db, payload, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/", response_model=List[schemas.LongTermGuestReadWithUser])
 def get_long_term_guests(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user)
 ):
-    query = db.query(models.LongTermGuest).options(joinedload(models.LongTermGuest.registered_by))
-    if user.role == 'staff':
-        query = query.filter(models.LongTermGuest.registered_by_user_id == user.id)
-    
-    results = query.order_by(models.LongTermGuest.created_at.desc()).all()
+    from ..modules.guest.service import long_term_guest_service
+    results = long_term_guest_service.get_long_term_guests(db, user)
     
     # Manually construct response to include user info
     response_data = []
@@ -82,7 +41,7 @@ def get_long_term_guests(
         response_data.append(data)
         
     return response_data
-    
+
 @router.put("/{guest_id}", response_model=schemas.LongTermGuestRead)
 def update_long_term_guest(
     guest_id: int, 
@@ -90,83 +49,29 @@ def update_long_term_guest(
     db: Session = Depends(get_db), 
     user: models.User = Depends(get_current_user)
 ):
-    db_guest = db.query(models.LongTermGuest).get(guest_id)
-    if not db_guest:
-        raise HTTPException(status_code=404, detail="Long-term guest not found")
-    if user.role == 'staff' and db_guest.registered_by_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    from ..modules.guest.service import long_term_guest_service
+    try:
+        guest = long_term_guest_service.update_long_term_guest(db, guest_id, payload, user)
+        if not guest:
+            raise HTTPException(status_code=404, detail="Long-term guest not found")
+        return guest
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    update_data = payload.model_dump(exclude_unset=True)
-
-    # --- CẢI TIẾN: Bổ sung validate ở PUT ---
-    start_date = update_data.get('start_date', db_guest.start_date)
-    end_date = update_data.get('end_date', db_guest.end_date)
-    if end_date < start_date:
-        raise HTTPException(status_code=400, detail="End date cannot be earlier than start date.")
-
-    # --- NÂNG CẤP: Xử lý estimated_datetime ---
-    # Xử lý riêng (cho phép set thành None)
-    if 'estimated_datetime' in update_data:
-        db_guest.estimated_datetime = update_data['estimated_datetime']
-        del update_data['estimated_datetime']
-    # --- KẾT THÚC NÂNG CẤP ---
-
-    for key, value in update_data.items():
-        # Bỏ qua trường estimated_time (đã bị xóa)
-        if key != 'estimated_time':
-            setattr(db_guest, key, value)
-        
-    db.commit()
-    db.refresh(db_guest)
-    return db_guest
-
-# === CẢI TIẾN 1: Endpoint xóa dữ liệu cũ ===
 @router.delete("/cleanup")
 def cleanup_old_long_term_guests(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user)
 ):
-    """
-    Xóa các khách dài hạn có end_date < ngày hiện tại.
-    Chỉ admin/manager mới được phép.
-    
-    Returns:
-        {
-            "deleted_count": int,
-            "message": str
-        }
-    """
-    # 1. Kiểm tra quyền
-    if user.role not in ['admin', 'manager']:
-        raise HTTPException(
-            status_code=403,
-            detail="Chỉ admin/manager mới có quyền xóa dữ liệu cũ"
-        )
-    
-    # 2. Lấy ngày hiện tại (local timezone)
-    today = get_local_time().date()
-    
-    # 3. Query các record cũ
-    old_guests = db.query(models.LongTermGuest)\
-        .filter(models.LongTermGuest.end_date < today)\
-        .all()
-    
-    deleted_count = len(old_guests)
-    
-    # 4. Xóa
-    for guest in old_guests:
-        db.delete(guest)
-    
-    db.commit()
-    
-    # 5. Log
-    logging.info(
-        f"User {user.username} deleted {deleted_count} "
-        f"expired long-term guests (end_date < {today})"
-    )
-    
-    return {"deleted_count": deleted_count, "message": "Success"}
-# === KẾT THÚC CẢI TIẾN 1 ===
+    from ..modules.guest.service import long_term_guest_service
+    try:
+        deleted_count = long_term_guest_service.cleanup_old_long_term_guests(db, user)
+        logging.info(f"User {user.username} deleted {deleted_count} expired long-term guests")
+        return {"deleted_count": deleted_count, "message": "Success"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 @router.delete("/{guest_id}", status_code=204)
 def delete_long_term_guest(
@@ -174,15 +79,13 @@ def delete_long_term_guest(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user)
 ):
-    db_guest = db.query(models.LongTermGuest).get(guest_id)
-    if not db_guest:
-        raise HTTPException(status_code=404, detail="Long-term guest not found")
-    if user.role not in ('admin', 'manager') and db_guest.registered_by_user_id != user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    db.delete(db_guest)
-    db.commit()
-    return Response(status_code=204)
+    from ..modules.guest.service import long_term_guest_service
+    try:
+        if not long_term_guest_service.delete_long_term_guest(db, guest_id, user):
+             raise HTTPException(status_code=404, detail="Long-term guest not found")
+        return Response(status_code=204)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 

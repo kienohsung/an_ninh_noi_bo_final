@@ -1,7 +1,7 @@
 # File: backend/app/main.py
 import os
 import logging
-from datetime import datetime, date, time
+from datetime import datetime
 import pytz
 
 from fastapi import FastAPI
@@ -22,14 +22,15 @@ try:
 except Exception:
     pass
 
-from .config import settings
-from .database import Base, engine, SessionLocal
+from .core.config import settings
+from .core.database import engine, Base, get_db, SessionLocal
 from .utils.logging_config import setup_logging
 from . import models
 from .services.form_sync_service import sync_google_form_registrations # Import Form Sync Service
+from .modules.guest.service import long_term_guest_service
 
 # Routers
-from .auth import router as auth_router, get_password_hash
+from .core.auth import router as auth_router, get_password_hash
 from .routers.users import router as users_router
 from .routers.guests import router as guests_router
 from .routers.suppliers import router as suppliers_router
@@ -53,7 +54,6 @@ app = FastAPI(
 setup_logging()
 logging.info("Application startup...")
 
-# CORS Middleware
 # CORS Middleware
 origins = [
     "http://localhost",
@@ -98,7 +98,7 @@ app.include_router(purchasing_router)
 # Mount static files
 app.mount(f"/{os.path.basename(settings.UPLOAD_DIR)}", StaticFiles(directory=settings.UPLOAD_DIR), name="static")
 
-# Khởi tạo admin user
+# Khởi tạo admin user và Job background
 @app.on_event("startup")
 def on_startup():
     db = SessionLocal()
@@ -109,7 +109,7 @@ def on_startup():
             db_admin = models.User(
                 username=settings.ADMIN_USERNAME,
                 password_hash=admin_password_hash,
-                full_name="Administrator",  # Sửa: thêm full_name
+                full_name="Administrator", 
                 role="admin"
             )
             db.add(db_admin)
@@ -120,72 +120,20 @@ def on_startup():
     finally:
         db.close()
 
-
-
-    # Job cho Khách dài hạn
+    # Job cho Khách dài hạn: sử dụng Service
     def create_daily_guest_entries():
-        """Hàm chạy nền để tạo khách vãng lai từ danh sách dài hạn."""
         logging.info("[long_term] Job started: Creating daily guest entries...")
         db = SessionLocal()
         try:
-            today = datetime.now(pytz.timezone(settings.TZ)).date()
-            
-            active_long_term_guests = db.scalars(
-                select(models.LongTermGuest).where(
-                    models.LongTermGuest.is_active == True,
-                    models.LongTermGuest.start_date <= today,
-                    models.LongTermGuest.end_date >= today
-                )
-            ).all()
-
-            # system_user check removed as we use original registrant
-
-            start_of_day = datetime.combine(today, time.min, tzinfo=pytz.timezone(settings.TZ))
-            end_of_day = datetime.combine(today, time.max, tzinfo=pytz.timezone(settings.TZ))
-
-            # Check for ANY guest with same ID card created today (to avoid duplicates)
-            existing_guests_today = db.scalars(
-                select(models.Guest.id_card_number).where(
-                    models.Guest.created_at >= start_of_day,
-                    models.Guest.created_at <= end_of_day,
-                    models.Guest.id_card_number != ""
-                )
-            ).all()
-            existing_guest_set = set(existing_guests_today)
-
-            count = 0
-            for lt_guest in active_long_term_guests:
-                if lt_guest.id_card_number and lt_guest.id_card_number not in existing_guest_set:
-                    # Use the original registrant's ID
-                    registrant_id = lt_guest.registered_by_user_id
-                    
-                    new_guest = models.Guest(
-                        full_name=lt_guest.full_name,
-                        id_card_number=lt_guest.id_card_number,
-                        company=lt_guest.company or lt_guest.supplier_name,
-                        reason=lt_guest.reason or "Khách đăng ký dài hạn",
-                        license_plate=lt_guest.license_plate,
-                        supplier_name=lt_guest.supplier_name,
-                        estimated_datetime=lt_guest.estimated_datetime,
-                        status="pending",
-                        registered_by_user_id=registrant_id, # <--- UPDATED
-                        created_at=models.get_local_time()
-                    )
-                    db.add(new_guest)
-                    existing_guest_set.add(lt_guest.id_card_number)
-                    count += 1
-            
+            count = long_term_guest_service.process_daily_entries(db, settings.TZ)
             if count > 0:
-                db.commit()
                 logging.info(f"[long_term] Job finished: Created {count} new daily guest(s).")
             else:
-                logging.info("[long_term] Job finished: No new guests needed to be created.")
-
+                logging.info("[long_term] Job finished: No new guests needed.")
         except Exception as e:
-            logging.error(f"[long_term] Job failed: {e}", exc_info=True)
-            db.rollback()
+             logging.error(f"[long_term] Job failed: {e}", exc_info=True)
         finally:
-            db.close()
+             db.close()
 
     # Chạy ngay khi startup
     try:
@@ -220,7 +168,7 @@ def on_startup():
         )
         sched.start()
         app.state.scheduler = sched
-        logging.info(f"[long_term] Scheduler started: every 60 minutes (TZ={settings.TZ}).")
+        logging.info(f"[long_term] Scheduler started: every 30 minutes (TZ={settings.TZ}).")
     except Exception as e:
         logging.error(f"[long_term] Could not start the scheduler: {e}", exc_info=True)
 
@@ -236,8 +184,6 @@ def on_shutdown():
         logging.error(f"Error shutting down scheduler: {e}", exc_info=True)
 
 
-
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Local Security API", "version": app.version}
-# Trigger reload

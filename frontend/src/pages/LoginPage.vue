@@ -74,32 +74,21 @@ async function onSubmit() {
     const cleanUsername = username.value.trim();
     const cleanPassword = password.value.trim();
     
-    const res = await api.post('/token', new URLSearchParams({
-      username: cleanUsername,
-      password: cleanPassword
-    }));
-    
-    // Save tokens
-    const token = res.data.access_token;
-    const refreshToken = res.data.refresh_token;
-    
-    localStorage.setItem('token', token);
-    localStorage.setItem('refreshToken', refreshToken);
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // USE AUTH STORE ACTION
+    await auth.login(cleanUsername, cleanPassword);
     
     $q.notify({
       type: 'positive',
       message: 'Đăng nhập thành công! Đang chuyển trang...',
       position: 'top',
-      timeout: 2000
+      timeout: 1000
     });
     
-    // Wait a bit then redirect
-    setTimeout(() => {
-      window.location.href = '/';
-    }, 1000);
+    // Redirect without reload
+    router.push('/');
     
   } catch (e) {
+    console.error("Login failed:", e);
     $q.notify({
       type: 'negative',
       message: e.response?.data?.detail || 'Sai tên đăng nhập hoặc mật khẩu',

@@ -6,19 +6,6 @@ Usage:
 
 This script adds a 'print_count' column to track the number of times
 an asset form has been printed.
-"""
-
-import sys
-import os
-
-# Add parent directory to path to import app modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from sqlalchemy import create_engine, text
-from app.config import settings
-
-def add_print_count_column():
-    """Add print_count column to asset_logs table"""
     
     # Create engine
     engine = create_engine(settings.DATABASE_URL)
