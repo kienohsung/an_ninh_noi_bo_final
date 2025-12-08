@@ -62,8 +62,7 @@ async def extract_info_with_gemini(image_file: UploadFile) -> ExtractedInfo:
         raise ValueError("API Key của Gemini chưa được cấu hình.")
 
     try:
-        # THAY ĐỔI 1: Cập nhật tên model để khớp với module TypeScript gốc
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-flash-latest')
 
         image = Image.open(image_file.file)
 

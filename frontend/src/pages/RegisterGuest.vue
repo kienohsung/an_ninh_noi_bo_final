@@ -550,7 +550,7 @@
         </q-card-section>
         <q-card-section class="q-pt-none">
           <q-list bordered separator>
-            <q-item clickable v-ripple v-for="plate in suggestions.license_plates" :key="plate" @click="selectValue('plate', plate)">
+             <q-item clickable v-ripple v-for="plate in suggestions.license_plates" :key="plate" @click="selectValue('plate', plate)">
               <q-item-section>{{ plate }}</q-item-section>
             </q-item>
             <q-item v-if="!suggestions.license_plates.length">
@@ -644,63 +644,55 @@ import { reactive, ref, onMounted, computed, watch } from 'vue'
 import { useQuasar, exportFile as qExportFile, date as quasarDate } from 'quasar'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
-// Import image upload utilities
-import { resizeImage, uploadMultipleImages } from '../utils/imageUpload'
-// Import validators
-import { validateEstimatedDateTime, validateGuestArray, validateDateRange } from '../utils/validators'
+import { uploadMultipleImages } from '../utils/imageUpload'
+import { useCCCDScanner } from '../composables/useCCCDScanner'
+import { useGuestForm } from '../composables/useGuestForm'
 
 const $q = useQuasar()
 const auth = useAuthStore()
 const isAdmin = computed(() => auth.user?.role === 'admin')
 const isManager = computed(() => auth.user?.role === 'manager')
 
-// --- BẮT ĐẦU NÂNG CẤP: Thay estimated_time bằng estimated_datetime ---
-const initialFormState = {
-  full_name: '', id_card_number: '', company: '', reason: '',
-  license_plate: '', supplier_name: '',
-  estimated_datetime: null, // <-- NÂNG CẤP
-  guests: [{ full_name: '', id_card_number: '' }]
-}
-// --- KẾT THÚC NÂNG CẤP ---
+// --- Composables ---
+const { isScanning, extractInfo } = useCCCDScanner()
+const { 
+  form, 
+  isBulk, 
+  isLongTerm, 
+  longTermDates, 
+  imageFiles, 
+  resetForm, 
+  addGuestToBulk: addPerson, 
+  removeGuestFromBulk: removePerson, 
+  validateForm 
+} = useGuestForm()
 
-const form = reactive({ ...initialFormState })
-const isBulk = ref(false)
-const isLongTerm = ref(false)
-const longTermDates = reactive({ from: '', to: '' })
-
+// --- Local State ---
 const rows = ref([])
 const q = ref('')
 const fileInputRef = ref(null)
 const suggestions = reactive({ companies: [], license_plates: [], supplier_names: [] })
 const showEditDialog = ref(false)
-
-// --- BẮT ĐẦU NÂNG CẤP: Thêm estimated_datetime vào form sửa ---
-const editForm = reactive({
-  id: null, full_name: '', id_card_number: '', company: '',
-  reason: '', license_plate: '', supplier_name: '', images: [],
-  estimated_datetime: null // <-- NÂNG CẤP
-})
-// --- KẾT THÚC NÂNG CẤP ---
-
-const newImageFiles = ref([])
-
-const imageFiles = ref([])
 const isSubmitting = ref(false)
 const showDetailsDialog = ref(false)
 const activeGuest = ref(null)
 const slide = ref(0)
-
 const showFullImageDialog = ref(false)
 const fullImageUrl = ref('')
-
 const showSupplierSearch = ref(false)
 const showPlateSearch = ref(false)
 let searchTargetForm = 'main'; 
-
 const cccdInputRef = ref(null);
-const isScanning = ref(false);
 
-// --- NÂNG CẤP: Export Logic ---
+// Edit Form State (Local)
+const editForm = reactive({
+  id: null, full_name: '', id_card_number: '', company: '',
+  reason: '', license_plate: '', supplier_name: '', images: [],
+  estimated_datetime: null
+})
+const newImageFiles = ref([])
+
+// --- Export Logic ---
 const showExportDialog = ref(false)
 const isExporting = ref(false)
 const exportFilters = reactive({
@@ -710,127 +702,27 @@ const exportFilters = reactive({
   supplier_name: null
 })
 const userOptions = ref([])
-const allUsers = ref([]) // Cache all users
+const allUsers = ref([]) 
+const filteredSupplierOptions = ref([])
 
-function openExportDialog() {
-  // Reset filters or keep them? Let's keep them for convenience, maybe reset dates if needed.
-  // exportFilters.start_date = ''
-  // exportFilters.end_date = ''
-  
-  // Load users if admin/manager
-  if ((isAdmin.value || isManager.value) && allUsers.value.length === 0) {
-    loadUsers()
-  }
-  
-  showExportDialog.value = true
-}
-
-async function loadUsers() {
-  try {
-    // Assuming there is an endpoint to get users. If not, we might need to rely on what we have or add one.
-    // Checking api.js or similar might be good, but for now let's assume /users exists or we can't do it easily.
-    // Wait, I don't see a /users endpoint in the file list I saw earlier (only guests.py).
-    // But guests.py imports models.User. 
-    // Let's check if there is a users router.
-    // If not, I might need to add one or just skip this part.
-    // However, the requirement says "người đăng ký... dạng droplist".
-    // I will try to fetch from /users if it exists, otherwise I might need to add it.
-    // Let's assume for now I can get it. If not I will fix later.
-    // Actually, I can use the `registered_by_name` from the loaded rows as a quick hack if I don't want to call API.
-    // But that only gives users who have registered guests in the current view.
-    // Better to fetch all users.
-    const { data } = await api.get('/users/') 
-    allUsers.value = data
-    userOptions.value = data
-  } catch (e) {
-    console.error("Failed to load users", e)
-    // Fallback: use unique users from current rows if available? No, that's unreliable.
-  }
-}
-
-function filterUsers (val, update) {
-  if (val === '') {
-    update(() => {
-      userOptions.value = allUsers.value
-    })
-    return
-  }
-
-  update(() => {
-    const needle = val.toLowerCase()
-    userOptions.value = allUsers.value.filter(v => v.full_name.toLowerCase().indexOf(needle) > -1)
-  })
-}
-
-
-
-async function executeExport() {
-  isExporting.value = true
-  try {
-    const params = {}
-    if (exportFilters.start_date) params.start_date = exportFilters.start_date.split('/').reverse().join('-') // Format if needed? Quasar date is YYYY/MM/DD usually.
-    // Wait, Quasar date mask="date" uses YYYY/MM/DD by default. Backend expects YYYY-MM-DD.
-    if (exportFilters.start_date) params.start_date = exportFilters.start_date.replace(/\//g, '-')
-    if (exportFilters.end_date) params.end_date = exportFilters.end_date.replace(/\//g, '-')
-    if (exportFilters.registrant) params.registrant_id = exportFilters.registrant
-    if (exportFilters.supplier_name) params.supplier_name = exportFilters.supplier_name
-
-    const response = await api.get('/guests/export/xlsx', {
-      params,
-      responseType: 'blob'
-    })
-
-    const url = window.URL.createObjectURL(new Blob([response.data]))
-    const link = document.createElement('a')
-    link.href = url
-    const contentDisposition = response.headers['content-disposition']
-    let fileName = 'guests_export.xlsx'
-    if (contentDisposition) {
-      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/)
-      if (fileNameMatch.length === 2) fileName = fileNameMatch[1]
-    }
-    link.setAttribute('download', fileName)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    
-    showExportDialog.value = false
-    $q.notify({ type: 'positive', message: 'Xuất dữ liệu thành công' })
-  } catch (error) {
-    console.error("Export failed", error)
-    $q.notify({ type: 'negative', message: 'Xuất dữ liệu thất bại' })
-  } finally {
-    isExporting.value = false
-  }
-}
-// --- KẾT THÚC NÂNG CẤP ---
-
-
-
-// --- BẮT ĐẦU NÂNG CẤP: Logic cho DateTime Picker ---
+// --- DateTime Picker Logic ---
 const proxyDate = ref(null)
 const proxyTime = ref(null)
-// searchTargetForm đã tồn tại, chúng ta sẽ tái sử dụng nó cho ('main' hoặc 'edit')
 
-// Computed để hiển thị ngày giờ trong FORM CHÍNH
 const formattedEstimatedDatetime = computed(() => {
   if (!form.estimated_datetime) return null;
-  // new Date() có thể xử lý chuỗi ISO (VD: 2025-10-30T15:30:00)
   const d = new Date(form.estimated_datetime);
-  // Định dạng lại theo chuẩn Việt Nam
   return quasarDate.formatDate(d, 'DD/MM/YYYY HH:mm');
 });
 
-// Computed để hiển thị ngày giờ trong DIALOG SỬA
 const formattedEditEstimatedDatetime = computed(() => {
   if (!editForm.estimated_datetime) return null;
   const d = new Date(editForm.estimated_datetime);
   return quasarDate.formatDate(d, 'DD/MM/YYYY HH:mm');
 });
 
-// Hàm mở popup và khởi tạo giá trị
 function openDateTimePickerProxy(target) {
-  searchTargetForm = target; // 'main', 'edit', hoặc 'edit_asset'
+  searchTargetForm = target;
   let dStr = null;
 
   if (target === 'main') {
@@ -853,8 +745,6 @@ function setEstimatedDatetime() {
   if (proxyDate.value) {
     const timeStr = proxyTime.value || '00:00';
     const newVal = `${proxyDate.value}T${timeStr}:00`;
-    // SỬA LỖI: Gửi thời gian UTC (có Z) để Backend lưu đúng chuẩn UTC
-    // Backend sẽ coi Naive DateTime là UTC và convert sang Local khi hiển thị
     const d = new Date(newVal);
     const utcIsoString = d.toISOString();
 
@@ -865,17 +755,13 @@ function setEstimatedDatetime() {
     }
   }
 }
-// --- KẾT THÚC NÂNG CẤP ---
-
 
 watch(isLongTerm, (newVal) => {
   if (newVal) {
-    // Đăng ký dài hạn không hỗ trợ tải ảnh lên trực tiếp
     imageFiles.value = [];
   }
 });
 
-// --- BẮT ĐẦU NÂNG CẤP: Thay đổi cột 'Giờ dự kiến' thành 'Ngày & Giờ dự kiến' ---
 const columns = [
   { name: 'thumbnail', label: 'Ảnh', field: 'thumbnail', align: 'center' },
   { name: 'full_name', align: 'left', label: 'Họ tên', field: 'full_name', sortable: true },
@@ -883,11 +769,7 @@ const columns = [
   { name: 'supplier_name', align: 'left', label: 'Nhà cung cấp', field: 'supplier_name', sortable: true },
   { name: 'reason', align: 'left', label: 'Chi tiết', field: 'reason', sortable: true, style: 'max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' },
   { name: 'license_plate', align: 'left', label: 'Biển số', field: 'license_plate', sortable: true },
-  
-  // --- NÂNG CẤP ---
   { name: 'estimated_datetime', align: 'left', label: 'Ngày & Giờ dự kiến', field: 'estimated_datetime', sortable: true },
-  // --- KẾT THÚC NÂNG CẤP ---
-  
   { name: 'registered_by_name', align: 'left', label: 'Người đăng ký', field: 'registered_by_name', sortable: true },
   { name: 'created_at', align: 'left', label: 'Ngày đăng ký', field: 'created_at', sortable: true, format: val => val ? new Date(val).toLocaleString('vi-VN') : '' },
   { name: 'status', align: 'center', label: 'Trạng thái', field: 'status', sortable: true },
@@ -900,19 +782,15 @@ const columns = [
     format: (val) => {
       if (!val) return '';
       try {
-        // Lấy thời gian từ CSDL
         const dbDate = new Date(val);
-        
-        // Hiển thị thời gian theo định dạng Việt Nam
         return dbDate.toLocaleString('vi-VN');
       } catch (e) {
-        return val; // Trả về giá trị gốc nếu có lỗi
+        return val;
       }
     } 
   },
   { name: 'actions', label: '', field: 'actions', align: 'right' }
 ]
-// --- KẾT THÚC NÂNG CẤP ---
 
 function triggerCccdInput() {
   cccdInputRef.value.click();
@@ -920,72 +798,22 @@ function triggerCccdInput() {
 
 async function handleCccdUpload(event) {
   const files = event.target.files;
-  if (!files || files.length === 0) return;
-
-  isScanning.value = true;
-  $q.loading.show({ message: `Đang xử lý ${files.length} ảnh CCCD...` });
-
-  try {
-    if (files.length === 1) {
-      const formData = new FormData();
-      formData.append('file', files[0]);
-      const { data } = await api.post('/gemini/extract-cccd-info', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      
+  const result = await extractInfo(files);
+  
+  if (result) {
+    if (result.single) {
       isBulk.value = false;
-      // Khi quét CCCD, mặc định là đăng ký thường, không phải dài hạn
       isLongTerm.value = false;
-      form.full_name = data.ho_ten || '';
-      form.id_card_number = data.so_cccd || '';
-      $q.notify({ type: 'positive', message: 'Đã điền thông tin từ 1 CCCD.' });
-
+      form.full_name = result.data.ho_ten || '';
+      form.id_card_number = result.data.so_cccd || '';
     } else {
       isBulk.value = true;
-      // Khi quét CCCD, mặc định là đăng ký thường, không phải dài hạn
       isLongTerm.value = false;
-      form.guests = [];
-
-      const promises = Array.from(files).map(file => {
-        const formData = new FormData();
-        formData.append('file', file);
-        return api.post('/gemini/extract-cccd-info', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-      });
-
-      const results = await Promise.all(promises);
-      
-      results.forEach(res => {
-        if (res.data && (res.data.ho_ten || res.data.so_cccd)) {
-          form.guests.push({
-            full_name: res.data.ho_ten || '',
-            id_card_number: res.data.so_cccd || ''
-          });
-        }
-      });
-
-      if (form.guests.length === 0) addPerson();
-
-      $q.notify({ type: 'positive', message: `Đã điền thông tin từ ${form.guests.length} CCCD vào form đăng ký đoàn.` });
+      form.guests = result.data;
+      if (form.guests.length === 0) addPerson(); // uses alias
     }
-  } catch (error) {
-    console.error("Lỗi khi quét CCCD:", error);
-    const detail = error.response?.data?.detail || 'Quét CCCD thất bại.';
-    $q.notify({ type: 'negative', message: detail });
-  } finally {
-    isScanning.value = false;
-    $q.loading.hide();
-    event.target.value = '';
   }
-}
-
-function addPerson() {
-  form.guests.push({ full_name: '', id_card_number: '' })
-}
-
-function removePerson(index) {
-  form.guests.splice(index, 1)
+  event.target.value = '';
 }
 
 const getImgUrl = (path) => `${api.defaults.baseURL}/uploads/${path}`
@@ -1028,131 +856,6 @@ function selectValue(type, value) {
   }
 }
 
-// --- NÂNG CẤP: Load users for filter ---
-// We need to ensure we have a way to get users.
-// If /users/ endpoint exists.
-// Let's assume it does or I'll add it.
-// Actually, to be safe, I'll check if I can find the users router.
-// But I can't check in the middle of this tool call.
-// I'll assume standard /users/ path.
-// Also need to handle the supplier filtering in the dialog properly.
-// I replaced the options in the template with suggestions.supplier_names, 
-// but for filtering to work I should use a filtered list.
-// Let's fix the template part for supplier select to use supplierOptions if I can.
-// Wait, I can't change the template I already wrote in the previous chunk easily without context.
-// Actually I can. I will update the template chunk to use `supplierOptions` instead of `suggestions.supplier_names`.
-// Ah, I already wrote the template chunk.
-// I will just make sure `suggestions.supplier_names` is used for now, and maybe skip filtering for supplier in the first pass if it's complex, 
-// OR I can use `use-input` and `@filter` with a local ref.
-// In the script chunk I added `supplierOptions` and `filterSuppliers`.
-// I need to make sure `filterSuppliers` updates `suggestions.supplier_names`? No, that would affect other parts.
-// I should have used a separate ref for the export dialog supplier options.
-// Let's refine the script chunk.
-// Actually, I can just use `suggestions.supplier_names` for the options and filter it?
-// No, `suggestions` is reactive.
-// I will create `filteredSupplierOptions` for the export dialog.
-
-const filteredSupplierOptions = ref([])
-
-function filterSuppliers (val, update) {
-  update(() => {
-    const needle = val.toLowerCase()
-    filteredSupplierOptions.value = suggestions.supplier_names.filter(v => v.toLowerCase().indexOf(needle) > -1)
-  })
-}
-
-// Initialize filtered options
-watch(() => suggestions.supplier_names, (newVal) => {
-    filteredSupplierOptions.value = newVal
-}, { immediate: true })
-
-// Also need to update the template to use `filteredSupplierOptions`
-// I will do that in a separate tool call if needed, or I can try to fix it now.
-// The previous chunk for template used `suggestions.supplier_names`.
-// I will use `multi_replace` so I can't go back.
-// I will just use `suggestions.supplier_names` in the template for now.
-// Wait, if I use `use-input` and `@filter`, I MUST update the options list passed to the component.
-// If I passed `suggestions.supplier_names`, I am filtering the global suggestions list? That's bad.
-// I should have passed `filteredSupplierOptions`.
-// I will correct the template in a subsequent call if I made a mistake.
-// BUT, I haven't submitted the tool call yet.
-// I can fix the template chunk in THIS tool call.
-// Let's check the template chunk again.
-// It says `:options="suggestions.supplier_names"`.
-// I will change it to `:options="filteredSupplierOptions"`.
-
-// ... wait, I can't edit the previous chunk in this thought process.
-// I have to issue the tool call with the CORRECT content.
-// So I will correct the template chunk in the tool call arguments.
-
-// Also, I need to add `exportGuests` to the return object if using Options API?
-// No, this is `<script setup>`, so top level variables are exposed.
-
-// One more thing: `api.get('/users/')`.
-// I need to verify if this endpoint exists.
-// I saw `backend/app/routers/guests.py`.
-// I didn't see `users.py` in the file list I checked earlier (I checked `backend` dir, it had 88 children).
-// I should probably check if `users.py` exists.
-// But I am in `replace_file_content` mode.
-// I will assume it exists because `guests.py` imports `models.User`.
-// If it fails, I'll fix it.
-
-// Correcting the template chunk in the tool call:
-// Change `:options="suggestions.supplier_names"` to `:options="filteredSupplierOptions"`
-
-// Correcting the script chunk:
-// Add `filteredSupplierOptions` and `filterSuppliers`.
-
-// Final check on `executeExport`:
-// `api.get('/guests/export/xlsx', ...)`
-// The backend endpoint I modified is `@router.get("/export/xlsx")`.
-// So it matches.
-
-// One detail: `exportGuests` vs `executeExport`.
-// In the template I used `@click="exportGuests"` in the dropdown menu.
-// But I defined `executeExport` for the dialog button.
-// And `openExportDialog` for the dropdown button.
-// Wait, in the dropdown menu:
-// `<q-item clickable v-close-popup @click="exportGuests">`
-// This should be `@click="openExportDialog"`.
-// I need to fix that in the template chunk.
-
-// Summary of fixes for the tool call:
-// 1. Template: Change `exportGuests` to `openExportDialog` in the dropdown.
-// 2. Template: Change `:options="suggestions.supplier_names"` to `:options="filteredSupplierOptions"` in the dialog.
-// 3. Script: Add `filteredSupplierOptions`, `filterSuppliers`, `openExportDialog`, `executeExport`.
-// 4. Script: `loadUsers` implementation.
-
-// Let's prepare the chunks.
-
-// Chunk 1 (Dropdown):
-// Replace `exportGuests` with `openExportDialog`.
-
-// Chunk 2 (Dialog):
-// Use `filteredSupplierOptions`.
-
-// Chunk 3 (Script):
-// Implement logic.
-
-// Wait, I need to make sure I don't break the existing `exportGuests` if it was there?
-// The original code had:
-// `<q-item clickable v-close-popup @click="exportGuests">`
-// And `const exportGuests = ...` (maybe? No, I don't see it in the file content I read).
-// The file content I read had:
-// `// ...` (truncated?)
-// Let's check the file content again.
-// I read lines 1-800.
-// The `exportGuests` function was NOT in the visible part.
-// But the template used it: `<q-item clickable v-close-popup @click="exportGuests">` (Line 243).
-// So it must be defined somewhere or it was missing.
-// If I am replacing it, I should define it or replace the call.
-// I will replace the call to `openExportDialog`.
-
-// I will proceed with the tool call.
-
-
-// Image upload functions moved to utils/imageUpload.js
-
 async function load () {
   try {
     const res = await api.get('/guests', { params: { q: q.value || undefined, include_all_my_history: true } })
@@ -1166,21 +869,30 @@ async function loadSuggestions() {
     try {
         const res = await api.get('/guests/suggestions')
         Object.assign(suggestions, res.data)
+        filteredSupplierOptions.value = suggestions.supplier_names || []
     } catch (error) {
         console.error("Could not load suggestions", error)
     }
 }
 
+function filterSuppliers (val, update) {
+  update(() => {
+    const needle = val.toLowerCase()
+    const options = suggestions.supplier_names || []
+    filteredSupplierOptions.value = options.filter(v => v.toLowerCase().indexOf(needle) > -1)
+  })
+}
+
+watch(() => suggestions.supplier_names, (newVal) => {
+    filteredSupplierOptions.value = newVal || []
+}, { immediate: true })
+
+
 async function onSubmit() {
     isSubmitting.value = true;
 
     try {
-        // Validate estimated datetime using utility
-        if (!validateEstimatedDateTime(form.estimated_datetime)) {
-             $q.notify({ 
-                 type: 'negative', 
-                 message: 'Vui lòng nhập "Ngày & Giờ dự kiến" để tiếp tục đăng ký.' 
-             });
+        if (!validateForm()) {
              isSubmitting.value = false;
              return;
         }
@@ -1188,21 +900,10 @@ async function onSubmit() {
         let successMessage = 'Đăng ký thành công!';
         
         if (isLongTerm.value) {
-            if (!longTermDates.from || !longTermDates.to) {
-                $q.notify({ type: 'negative', message: 'Vui lòng chọn đầy đủ ngày bắt đầu và kết thúc.' });
-                isSubmitting.value = false;
-                return;
-            }
-
+            // Logic checked by validateForm, safe to proceed
             const guestsToRegister = isBulk.value 
                 ? form.guests 
                 : [{ full_name: form.full_name, id_card_number: form.id_card_number }];
-
-            if (guestsToRegister.some(g => !g.full_name || !g.full_name.trim())) {
-                 $q.notify({ type: 'negative', message: 'Vui lòng nhập đầy đủ họ tên cho tất cả khách.' });
-                 isSubmitting.value = false;
-                 return;
-            }
 
             const registrationPromises = guestsToRegister.map(guest => {
                 const payload = {
@@ -1212,10 +913,7 @@ async function onSubmit() {
                     supplier_name: form.supplier_name,
                     full_name: guest.full_name,
                     id_card_number: guest.id_card_number,
-                    
-                    // Gửi estimated_datetime cho khách dài hạn
                     estimated_datetime: form.estimated_datetime || null,
-
                     start_date: quasarDate.formatDate(quasarDate.extractDate(longTermDates.from, 'YYYY/MM/DD'), 'YYYY-MM-DD'),
                     end_date: quasarDate.formatDate(quasarDate.extractDate(longTermDates.to, 'YYYY/MM/DD'), 'YYYY-MM-DD'),
                 };
@@ -1226,7 +924,7 @@ async function onSubmit() {
             await Promise.all(registrationPromises);
             successMessage = `Đăng ký dài hạn cho ${guestsToRegister.length} khách thành công!`;
 
-        } else { // Đăng ký thường (không dài hạn)
+        } else {
             if (isBulk.value) {
                 const bulkResponse = await api.post('/guests/bulk', form);
                 const createdGuests = bulkResponse.data;
@@ -1252,7 +950,6 @@ async function onSubmit() {
     }
 }
 
-
 async function uploadImagesForGuests(guests) {
     if (imageFiles.value && imageFiles.value.length > 0) {
         for (const guest of guests) {
@@ -1263,21 +960,7 @@ async function uploadImagesForGuests(guests) {
     }
 }
 
-// --- BẮT ĐẦU NÂNG CẤP: Reset cả estimated_datetime ---
-function resetForm() {
-    Object.assign(form, { ...initialFormState, guests: [{ full_name: '', id_card_number: '' }] });
-    form.estimated_datetime = null; // <-- NÂNG CẤP
-    imageFiles.value = [];
-    isBulk.value = false;
-    isLongTerm.value = false;
-    longTermDates.from = '';
-    longTermDates.to = '';
-}
-// --- KẾT THÚC NÂNG CẤP ---
-
-
 function editRow(row) {
-    // Đảm bảo sao chép sâu (deep copy) để tránh ảnh hưởng row gốc
     Object.assign(editForm, JSON.parse(JSON.stringify(row)));
     newImageFiles.value = [];
     showEditDialog.value = true;
@@ -1308,9 +991,6 @@ async function onUpdateSubmit() {
     $q.loading.show({ message: 'Đang cập nhật...' });
     try {
         editForm.supplier_name = editForm.supplier_name || editForm.company;
-        
-        // editForm (từ editForm definition) đã chứa estimated_datetime
-        // Hàm openDateTimePickerProxy/setEstimatedDatetime đã cập nhật nó
         await api.put(`/guests/${editForm.id}`, editForm);
 
         if (newImageFiles.value && newImageFiles.value.length > 0) {
@@ -1329,7 +1009,6 @@ async function onUpdateSubmit() {
        newImageFiles.value = [];
     }
 }
-
 
 async function delRow (row) {
     $q.dialog({
@@ -1370,16 +1049,74 @@ async function handleImport(event) {
   }
 }
 
-async function exportGuests() {
+// Export Logic
+function openExportDialog() {
+  if ((isAdmin.value || isManager.value) && allUsers.value.length === 0) {
+    loadUsers()
+  }
+  showExportDialog.value = true
+}
+
+async function loadUsers() {
   try {
-    const response = await api.get('/guests/export/xlsx', { responseType: 'blob' })
-    const blob = new Blob([response.data], { type: response.headers['content-type'] })
-    const filename = `guests_export_${new Date().toISOString().slice(0,10)}.xlsx`
-    qExportFile(filename, blob)
-    $q.notify({ type: 'positive', message: 'Export thành công!' })
+    const { data } = await api.get('/users/') 
+    allUsers.value = data
+    userOptions.value = data
+  } catch (e) {
+    console.error("Failed to load users", e)
+  }
+}
+
+function filterUsers (val, update) {
+  if (val === '') {
+    update(() => {
+      userOptions.value = allUsers.value
+    })
+    return
+  }
+
+  update(() => {
+    const needle = val.toLowerCase()
+    userOptions.value = allUsers.value.filter(v => v.full_name.toLowerCase().indexOf(needle) > -1)
+  })
+}
+
+
+async function executeExport() {
+  isExporting.value = true
+  try {
+    const params = {}
+    if (exportFilters.start_date) params.start_date = exportFilters.start_date.replace(/\//g, '-')
+    if (exportFilters.end_date) params.end_date = exportFilters.end_date.replace(/\//g, '-')
+    if (exportFilters.registrant) params.registrant_id = exportFilters.registrant
+    if (exportFilters.supplier_name) params.supplier_name = exportFilters.supplier_name
+
+    const response = await api.get('/guests/export/xlsx', {
+      params,
+      responseType: 'blob'
+    })
+
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    const contentDisposition = response.headers['content-disposition']
+    let fileName = 'guests_export.xlsx'
+    if (contentDisposition) {
+      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/)
+      if (fileNameMatch && fileNameMatch.length === 2) fileName = fileNameMatch[1] // Sửa lỗi check length
+    }
+    link.setAttribute('download', fileName)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    
+    showExportDialog.value = false
+    $q.notify({ type: 'positive', message: 'Xuất dữ liệu thành công' })
   } catch (error) {
-    console.error("Export failed:", error)
-    $q.notify({ type: 'negative', message: 'Export thất bại.' })
+    console.error("Export failed", error)
+    $q.notify({ type: 'negative', message: 'Xuất dữ liệu thất bại' })
+  } finally {
+    isExporting.value = false
   }
 }
 
@@ -1395,7 +1132,6 @@ function clearData() {
     persistent: true
   }).onOk(async (password) => {
     try {
-      // Validate password với backend
       const validation = await api.post('/admin/validate-delete-password', { password })
       
       if (validation.data.valid) {
@@ -1426,7 +1162,6 @@ function deleteOldData() {
     $q.loading.show({ message: 'Đang xác thực...' })
     
     try {
-      // Validate password với backend
       const validation = await api.post('/admin/validate-delete-password', { password })
       
       if (!validation.data.valid) {
@@ -1435,7 +1170,6 @@ function deleteOldData() {
         return
       }
       
-      // Password valid, proceed with delete
       $q.loading.show({ message: 'Đang xóa dữ liệu cũ...' })
       const response = await api.post('/guests/delete-old')
       const deletedCount = response.data?.deleted_count || 0
