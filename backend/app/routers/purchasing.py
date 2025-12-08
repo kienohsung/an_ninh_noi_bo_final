@@ -8,11 +8,15 @@ from pydantic import BaseModel, Field
 import logging
 import uuid
 import os
+import pandas as pd
+import io
+from fastapi.responses import Response
 
 from .. import models
 from ..database import get_db
 from ..auth import require_roles, get_current_user
 from ..config import settings
+from ..models import get_local_time
 
 # === SCHEMAS ===
 class PurchasingLogCreate(BaseModel):
@@ -299,5 +303,116 @@ def receive_purchasing(
     
     db.commit()
     db.refresh(db_purchasing)
-    
     return db_purchasing
+
+@router.get("/export/xlsx", dependencies=[Depends(require_roles("admin", "manager", "staff"))])
+def export_purchasing_logs(
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+    start_date: str | None = Query(default=None, description="Ngày bắt đầu (YYYY-MM-DD)"),
+    end_date: str | None = Query(default=None, description="Ngày kết thúc (YYYY-MM-DD)"),
+    department: str | None = Query(default=None, description="Bộ phận đề xuất"),
+    status: str | None = Query(default=None, description="Trạng thái")
+):
+    try:
+        query = db.query(models.PurchasingLog)
+
+        # --- Date range filtering (based on created_at) ---
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                query = query.filter(models.PurchasingLog.created_at >= start_dt)
+            except ValueError:
+                pass 
+        
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                end_dt = end_dt.replace(hour=23, minute=59, second=59) # End of day
+                query = query.filter(models.PurchasingLog.created_at <= end_dt)
+            except ValueError:
+                pass
+
+        # --- Filtering ---
+        if department:
+            query = query.filter(models.PurchasingLog.department.ilike(f"%{department}%"))
+        
+        if status:
+            query = query.filter(models.PurchasingLog.status == status)
+
+        results = query.order_by(models.PurchasingLog.created_at.desc()).all()
+
+        # === EXCEL FORMAT ===
+        data_to_export = []
+        for idx, log in enumerate(results, start=1):
+            created_at_str = log.created_at.strftime("%d/%m/%Y %H:%M") if log.created_at else ""
+            received_at_str = log.received_at.strftime("%d/%m/%Y %H:%M") if log.received_at else ""
+            
+            status_map = {
+                "new": "Mới",
+                "pending": "Chờ duyệt",
+                "approved": "Đã duyệt",
+                "rejected": "Từ chối",
+                "completed": "Hoàn thành"
+            }
+            status_display = status_map.get(log.status, log.status)
+
+            data_to_export.append({
+                "STT": idx,
+                "Ngày tạo": created_at_str,
+                "Người tạo": log.creator_name,
+                "Bộ phận đề xuất": log.department,
+                "Bộ phận sử dụng": log.using_department,
+                "Loại": "Vật tư" if log.category == "supplies" else "Thiết bị",
+                "Tên hàng": log.item_name,
+                "Nhà cung cấp": log.supplier_name,
+                "Giá duyệt": log.approved_price,
+                "Trạng thái": status_display,
+                "Ngày nhận": received_at_str,
+                "Ghi chú nhận": log.received_note or ""
+            })
+
+        df = pd.DataFrame(data_to_export)
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Purchasing', startrow=1, header=True)
+            
+            workbook = writer.book
+            worksheet = writer.sheets['Purchasing']
+            
+            # Formats
+            worksheet.set_paper(9) # A4 = 9
+            worksheet.set_landscape()
+            
+            title_format = workbook.add_format({'font_name': 'Times New Roman', 'font_size': 14, 'bold': True, 'align': 'center', 'valign': 'vcenter'})
+            header_format = workbook.add_format({'font_name': 'Times New Roman', 'font_size': 11, 'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
+            data_format = workbook.add_format({'font_name': 'Times New Roman', 'font_size': 11, 'align': 'left', 'valign': 'vcenter', 'border': 1})
+            
+            # Title
+            worksheet.merge_range(0, 0, 0, len(df.columns) - 1, 'BÁO CÁO MUA SẮM VẬT TƯ / THIẾT BỊ', title_format)
+            
+            # Header
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(1, col_num, value, header_format)
+            
+            # Data
+            for row_num in range(len(df)):
+                for col_num in range(len(df.columns)):
+                    worksheet.write(row_num + 2, col_num, df.iloc[row_num, col_num], data_format)
+            
+            # Widths
+            worksheet.set_column(0, 0, 5)   # STT
+            worksheet.set_column(1, 1, 15)  # Date
+            worksheet.set_column(4, 5, 20)  # Departments
+            worksheet.set_column(6, 6, 30)  # Item Name
+
+        output.seek(0)
+        filename = f"bao_cao_mua_sam_{get_local_time().strftime('%Y%m%d_%H%M')}.xlsx"
+        headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
+        return Response(content=output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+
+    except Exception as e:
+        logging.error(f"Cannot export purchasing logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Cannot export Excel file.")
+

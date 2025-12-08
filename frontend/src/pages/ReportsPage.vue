@@ -60,6 +60,21 @@
       </q-card>
     </q-expansion-item>
 
+    <!-- Báo cáo Mua bán (MỚI) -->
+    <q-expansion-item
+      class="q-mt-sm"
+      icon="shopping_cart"
+      label="Báo cáo Mua bán"
+      header-class="bg-blue-2 text-weight-medium"
+      dense
+    >
+      <q-card flat bordered>
+        <q-card-section>
+          <PurchaseReportChart />
+        </q-card-section>
+      </q-card>
+    </q-expansion-item>
+
     <!-- Sự kiện An ninh -->
     <q-expansion-item
       ref="securityEventExpansion"
@@ -348,6 +363,7 @@ import { useQuasar, date } from 'quasar'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
 import SecurityEventTable from '../components/SecurityEventTable.vue'
+import PurchaseReportChart from '../components/reports/PurchaseReportChart.vue'
 
 const $q = useQuasar()
 const auth = useAuthStore()
