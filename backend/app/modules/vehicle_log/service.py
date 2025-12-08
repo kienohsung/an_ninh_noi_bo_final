@@ -49,17 +49,21 @@ class VehicleLogService:
         q: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], Any, Any]:
         start_date, end_date = self.quick_range_to_dates(quick)
-        if start: start_date_parsed = self.parse_date(start)
-        if start_date_parsed: start_date = start_date_parsed
+        if start:
+            start_date_parsed = self.parse_date(start)
+            if start_date_parsed: start_date = start_date_parsed
         
-        if end: end_date_parsed = self.parse_date(end)
-        if end_date_parsed: end_date = end_date_parsed
+        if end:
+            end_date_parsed = self.parse_date(end)
+            if end_date_parsed: end_date = end_date_parsed
 
         if start_date and end_date and start_date > end_date:
             raise ValueError("Ngày bắt đầu không thể lớn hơn ngày kết thúc.")
 
         try:
+            logger.info(f"Fetching vehicle logs. Quick={quick}, Start={start_date}, End={end_date}, Q={q}")
             rows, charts, kpi = filter_and_aggregate(q=q, start=start_date, end=end_date)
+            logger.info(f"Vehicle logs fetched. Rows={len(rows)}")
             return rows, charts, kpi
         except FileNotFoundError as e:
             logger.critical(f"CRITICAL ERROR in GSheet service: {e}")

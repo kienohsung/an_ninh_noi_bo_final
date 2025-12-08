@@ -76,16 +76,19 @@ const router = createRouter({ history: createWebHistory(), routes })
 
 router.beforeEach((to, from, next) => {
   const auth = useAuthStore()
+  console.log(`[Router] Navigating from ${from.path} to ${to.path}. Roles: ${to.meta.roles}. User Role: ${auth.user?.role}`);
 
   // FORCE HOME REDIRECT:
   // Nếu là lần load đầu tiên (from.matched.length === 0)
   // VÀ không phải trang login, không phải trang chủ
   // THÌ điều hướng về trang chủ '/'
   if (from.matched.length === 0 && to.path !== '/login' && to.path !== '/') {
+    console.log("[Router] Force redirect to / from deep link");
     return next('/')
   }
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
+    console.log("[Router] Not authenticated. Redirecting to /login");
     auth.returnUrl = to.fullPath
     return next('/login')
   }
@@ -93,6 +96,7 @@ router.beforeEach((to, from, next) => {
   // Kiểm tra role
   if (to.meta.roles) {
     if (!to.meta.roles.includes(auth.user?.role)) {
+      console.log(`[Router] Access denied. Expected ${to.meta.roles}, got ${auth.user?.role}. Redirecting.`);
       // Nếu không có quyền, về trang mặc định
       return next(defaultRouteForRole(auth.user?.role))
     }
