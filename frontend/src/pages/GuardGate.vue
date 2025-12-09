@@ -60,7 +60,7 @@
               color="positive" 
               icon="login" 
               label="Xác nhận vào" 
-              @click="confirmIn(props.row)" 
+              @click="openConfirmInDialog(props.row)" 
               dense
               no-caps
             />
@@ -243,6 +243,41 @@
         <!-- KẾT THÚC NÂNG CẤP -->
       </q-table>
     </q-card>
+
+
+    <!-- Dialog Xác nhận vào -->
+    <q-dialog v-model="showConfirmDialog">
+      <q-card style="min-width: 400px; max-width: 80vw">
+        <q-card-section class="bg-primary text-white">
+          <div class="text-h6">Xác nhận khách vào</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-lg text-center">
+            <div class="text-h5 text-grey-8 q-mb-sm">Khách:</div>
+            <div class="text-h4 text-weight-bold text-primary q-mb-md">
+              {{ selectedGuest?.full_name }}
+            </div>
+            
+            <q-separator spaced />
+            
+            <div class="q-mt-md">
+                 <div class="text-h5 text-grey-8 q-mb-sm">Biển số:</div>
+                 <div v-if="selectedGuest?.license_plate" class="text-h3 text-weight-bolder text-negative">
+                   {{ selectedGuest?.license_plate }}
+                </div>
+                 <div v-else class="text-h4 text-grey">
+                   Đi bộ
+                </div>
+            </div>
+        </q-card-section>
+
+        <q-card-actions align="center" class="q-pa-md q-gutter-md">
+          <q-btn label="Bấm nhầm, hủy" v-close-popup color="negative" size="lg" icon="close" />
+          <q-btn label="XÁC NHẬN VÀO" @click="handleConfirmIn" color="positive" size="lg" v-close-popup icon="check" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
   </q-page>
 </template>
 
@@ -526,6 +561,21 @@ async function load () {
     offline.value = true
   } finally {
     loading.value = false;
+  }
+}
+
+// --- CONFIRMATION DIALOG LOGIC ---
+const showConfirmDialog = ref(false)
+const selectedGuest = ref(null)
+
+function openConfirmInDialog(row) {
+  selectedGuest.value = row
+  showConfirmDialog.value = true
+}
+
+async function handleConfirmIn() {
+  if (selectedGuest.value) {
+    await confirmIn(selectedGuest.value)
   }
 }
 
