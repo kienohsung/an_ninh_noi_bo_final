@@ -63,8 +63,143 @@ Khi đọc file này để phân tích hoặc thêm nhật ký mới, BẮT BU�
 13. [10/10/2025 - UI/UX: Audio Alert & Search](#10102025-uiux-audio-alert--search)
 14. [09/10/2025 - Google Sheet Module](#09102025-google-sheet-module)
 15. [08/10/2025 - Image Upload & Database Migration](#08102025-image-upload--database-migration)
+16. [04/12/2025 - Report & Asset Control Analytics Module](#04122025-report-asset-analytics-module)
+17. [08/12/2025 - Module Quản lý Mua bán & System Fixes](#08122025-purchasing-module-system-fixes)
+18. [09/12/2025 - Backend Modular Refactoring & Critical Frontend Fixes](#09122025-backend-modular-refactoring)
+
 
 ---
+---
+
+# <a id="09122025-backend-modular-refactoring"></a> 09/12/2025 🛠️ Backend Modular Refactoring & Critical Frontend Fixes
+**Version:** v2.0.0 | **Tags:** #refactor, #backend, #frontend, #bugfix, #architecture
+
+## 1. Tổng quan (Overview)
+* **Mục tiêu:** Hoàn tất chuyển đổi Backend sang kiến trúc Modular Monolith (Phase 3) và khắc phục triệt để lỗi "Màn hình trắng" (WSOD) trên Frontend.
+* **Trạng thái:** ✅ Hoàn thành
+
+## 2. Vấn đề & Yêu cầu (Problem & Requirements)
+* **Bối cảnh:**
+    * **Backend:** Logic nghiệp vụ nằm lẫn lộn trong các Routers (`users.py`, `guests.py`...), gây khó khăn cho việc bảo trì và test độc lập.
+    * **Frontend:** Người dùng gặp lỗi màn hình trắng hoặc vòng lặp đăng nhập (Login Loop) do xung đột race condition khi khởi tạo ứng dụng (init store vs clear cache).
+* **Yêu cầu cụ thể:**
+    * Tách biệt hoàn toàn Logic Layer (Services) và API Layer (Routers/Controllers).
+    * Đảm bảo Frontend khởi động an toàn (Safe Bootstrap), không bị block bởi network chậm hoặc cache cũ (stale token).
+
+## 3. Giải pháp Kỹ thuật (Technical Solution)
+* **Kiến trúc/Logic:**
+    * **Backend:** Chuyển sang **Service Layer Pattern**. Router chỉ đóng vai trò nhận request, kiểm tra quyền và trả response.
+    * **Frontend:** Áp dụng **"Safe Bootstrap" Pattern** với 3 lớp bảo vệ.
+* **Backend (`routers/*.py` → `services/*.py`):**
+    * Di chuyển toàn bộ business logic từ Routers sang các Service classes: `UserService`, `AssetService`, `GuestService`.
+    * Refactor `main.py` để ủy quyền các background tasks phức tạp (như tạo khách vãng lai hàng ngày) cho Services xử lý.
+* **Frontend (`src/main.js` & `stores/auth.js`):**
+    * **Layer 1 (Deterministic Initialization):** Đưa logic dọn dẹp Cache lên đầu file `main.js`, chạy đồng bộ (synchronous) trước khi `createApp` để đảm bảo môi trường sạch.
+    * **Layer 2 (Safety Timeout):** Bọc hàm `auth.bootstrap()` trong `Promise.race` với timeout 1 giây. Bắt buộc App phải mount UI ngay cả khi mạng treo hoặc API lỗi 401.
+    * **Layer 3 (Logical Transitions):** Thay thế toàn bộ lệnh `window.location.href` (hard reload) bằng `router.push` để giữ state của SPA và tránh vòng lặp reload.
+
+## 4. Kết quả & Cập nhật (Impact & Metrics)
+* **Files Modified:** `backend/app/routers/*`, `backend/app/services/*`, `frontend/src/main.js`, `frontend/src/stores/auth.js`.
+* **Tính năng/Cải thiện:**
+    * **Backend:** Codebase sạch sẽ theo chuẩn Modular. Logic nghiệp vụ (Check-in/out, Asset handling) đã được tách biệt.
+    * **Frontend:** Tải trang ổn định 100%, loại bỏ hoàn toàn lỗi màn hình trắng và login loop.
+* **Verification:** Đã kiểm chứng các luồng cốt lõi thông qua script `backend/scripts/test_flows.py` (chạy kiểm thử trực tiếp với DB, độc lập với API layer).
+
+## 5. Bài học & Ghi chú (Lessons Learned)
+* **SPA Rule:** Tuyệt đối không dùng `window.location.reload` hoặc gán `href` trong Single Page App vì nó phá vỡ State quản lý và Lifecycle của Vue/React.
+* **Mount at All Costs:** Không bao giờ để một tác vụ Async (như check auth/fetch config) chặn việc Mount UI vô thời hạn. Luôn cần cơ chế Timeout fallback.
+* **Sync before Async:** Dọn dẹp dữ liệu rác (như `localStorage`) phải thực hiện đồng bộ trước khi khởi tạo các State Management complex (như Pinia).
+
+# <a id="08122025-purchasing-module-system-fixes"></a> 08/12/2025 🛒 Module Quản lý Mua bán (Purchasing) & System Stabilization
+**Version:** v1.16.0 | **Tags:** #purchasing, #inventory, #bugfix, #system, #frontend
+
+## 1. Tổng quan (Overview)
+* **Mục tiêu:** Hoàn thiện quy trình "Mua hàng -> Nhận bàn giao", đồng thời xử lý triệt để các lỗi nghiêm trọng gây crash ứng dụng (Màn hình trắng, Backend Syntax Error).
+* **Trạng thái:** ✅ Hoàn thành
+
+## 2. Vấn đề & Yêu cầu (Problem & Requirements)
+* **Nhu cầu nghiệp vụ:** Cần hệ thống theo dõi việc mua sắm nội bộ, lưu trữ chứng từ (ảnh request) và bằng chứng nhận hàng (ảnh thực tế).
+* **Vấn đề kỹ thuật (Critical Bugs):**
+    * **White Screen:** App bị trắng xóa khi khởi động do lỗi cú pháp JS liên quan đến IIFE.
+    * **Backend Crash:** Server không start được do lỗi ký tự lạ trong file model.
+    * **Cache Issue:** Cơ chế xóa cache ở trang Login không hiệu quả với người dùng Auto-login.
+
+## 3. Giải pháp Kỹ thuật (Technical Solution)
+* **3.1. Module Mua bán (Backend & Frontend):**
+    * **Database:** Thêm bảng `PurchasingLog` (lưu phiếu), `PurchasingImage` (lưu ảnh). Phân loại ảnh theo `type`: 'request' (chứng từ) hoặc 'delivery' (bàn giao).
+    * **Backend:**
+        * API `POST /purchasing/{id}/receive`: Xử lý logic nhận hàng, yêu cầu bắt buộc có ảnh thực tế.
+        * Script `migrate_purchasing.py`: Tự động tạo bảng và index cần thiết.
+    * **Frontend:**
+        * `PurchasingIndex.vue`: Danh sách phiếu, filter theo trạng thái.
+        * `PurchasingReceiveDialog.vue`: Form nhận hàng chuyên biệt.
+* **3.2. System Fixes & Optimization:**
+    * **Auto Clear Cache (`main.js`):** Chuyển logic xóa cache từ Login Page sang `main.js`. Mỗi khi F5/Mở App -> Backup Token -> Xóa sạch Storage -> Restore Token.
+    * **Fix lỗi "White Screen" (ASI Bug):** Thêm dấu chấm phẩy `;` sau `useAuthStore()` trước khi gọi IIFE `(async () => ...)` để tránh JS hiểu nhầm là gọi hàm.
+    * **Fix lỗi Backend Crash:** Rà soát và xóa ký tự backticks (```) thừa ở cuối file `models.py`.
+
+## 4. Kết quả & Cập nhật (Impact & Metrics)
+* **Files Modified:** * **Backend:** `models.py`, `routers/purchasing.py`, `main.py`, `migrate_purchasing.py`.
+    * **Frontend:** `main.js`, `router/index.js`, `MainLayout.vue`, `PurchasingIndex.vue`, `PurchasingFormDialog.vue`.
+* **Tính năng mới:**
+    * Quy trình mua bán khép kín: Tạo phiếu -> Upload chứng từ -> Nhận hàng -> Upload ảnh thực tế -> Hoàn thành.
+* **Sửa lỗi (Bug Fixes):**
+    * **JS ASI Error:** Đã fix lỗi `TypeError: useAuthStore(...) is not a function`.
+    * **Import Path:** Sửa đường dẫn import `api.js` sai trong component con (`../../` -> `../../../`).
+    * **UI Bug:** Fix lỗi cú pháp thẻ `q-table` khiến click không mở được popup.
+
+## 5. Bài học & Ghi chú (Lessons Learned)
+* **Javascript ASI (Automatic Semicolon Insertion):** Luôn sử dụng dấu chấm phẩy `;` rõ ràng, đặc biệt là trước các hàm IIFE `(function...` hoặc `(async...`. Nếu không, JS sẽ gộp dòng trước đó và dòng IIFE thành một lệnh gọi hàm duy nhất gây lỗi runtime khó debug.
+* **Code Editing:** Cẩn thận với các ký tự lạ (backticks, whitespace) khi copy-paste code vào file Python, có thể gây `SyntaxError` khiến server không thể khởi động.
+* **Cache Strategy:** Logic dọn dẹp cache nên đặt ở entry point (`main.js`) thay vì `LoginPage` để đảm bảo áp dụng cho cả người dùng đã đăng nhập (Auto-login).
+
+
+# <a id="04122025-report-asset-analytics-module"></a> 04/12/2025 📊 Report & Asset Control Analytics Module
+**Version:** v1.15.0 | **Tags:** #analytics, #reports, #charts, #backend, #frontend
+
+## 1. Tổng quan (Overview)
+* **Mục tiêu:** Cung cấp 4 loại báo cáo phân tích toàn diện (An ninh khách, Kiểm soát tài sản, Tổng quan hệ thống, Hoạt động người dùng) để hỗ trợ ra quyết định.
+* **Trạng thái:** ✅ Hoàn thành
+
+## 2. Vấn đề & Yêu cầu (Problem & Requirements)
+* **Bối cảnh:**
+    * Hệ thống thiếu cái nhìn tổng quan về xu hướng lượng khách và hiệu suất làm việc của nhân viên.
+    * Việc kiểm soát tài sản mượn/trả đang gặp khó khăn trong việc xác định các tài sản quá hạn (Overdue) và mức độ rủi ro.
+* **Yêu cầu cụ thể:**
+    * **Visitor Security Index:** So sánh dữ liệu khách theo tháng, trendline 30 ngày, và top nhà cung cấp.
+    * **Asset Control (Critical):** Phát hiện tài sản quá hạn, phân loại rủi ro (High/Medium/Low) và hỗ trợ Export Excel.
+    * **System Overview:** Hiển thị KPI Cards (Total users, guests, assets).
+    * **User Activity:** Chấm điểm hiệu suất (Performance score) cho từng nhân viên.
+
+## 3. Giải pháp Kỹ thuật (Technical Solution)
+* **Kiến trúc/Logic:**
+    * Frontend sử dụng **ApexCharts** cho biểu đồ và **Quasar Tables** cho dữ liệu chi tiết.
+    * Backend tổng hợp dữ liệu qua SQL queries tối ưu, trả về theo Pydantic Schemas.
+    * **Timezone Logic:** Sử dụng `pytz` (Asia/Bangkok) để so sánh `expected_return_date` với thời gian thực chính xác, tránh sai sót ngày quá hạn.
+* **Backend (`routers/reports.py`, `schemas.py`):**
+    * Thêm 4 endpoints: `/visitor-security-index`, `/asset-control`, `/system-overview`, `/user-activity`.
+    * Định nghĩa 10 schemas mới (VD: `MonthlyDataPoint`, `OverdueAssetDetail`, `UserActivityStat`).
+    * Fix logic truy vấn: Xử lý `NULL` cho `expected_return_date` và map đúng quan hệ `registered_by_user_id`.
+* **Frontend (`pages/ReportsPage.vue` & components):**
+    * Tạo trang Reports với 4 tabs chính.
+    * Components: `VisitorSecurityChart.vue` (Charts), `AssetControlDashboard.vue` (Overdue logic), `SystemOverviewCards.vue`, `UserActivityTable.vue`.
+    * Phân quyền: Chỉ `admin` và `manager` mới truy cập được route `/reports`.
+
+## 4. Kết quả & Cập nhật (Impact & Metrics)
+* **Files Modified:** `router/index.js`, `MainLayout.vue`, `pages/ReportsPage.vue`, `backend/app/routers/reports.py`, `backend/app/schemas.py` (+ components con).
+* **Tính năng mới:**
+    * Dashboard trực quan với các loại biểu đồ: Area, Line, Bar, Donut.
+    * Hệ thống cảnh báo tài sản quá hạn với thanh màu mức độ rủi ro (Đỏ > 7 ngày).
+* **Sửa lỗi (Bug Fixes):**
+    * **Data Structure:** Fix lỗi Frontend đọc `total` trong khi Backend trả `count` gây crash biểu đồ.
+    * **Database Column:** Sửa lỗi gọi nhầm `registered_by_id` thành `registered_by_user_id` trong query.
+    * **Import Shadowing:** Fix lỗi conflict khi import `datetime` trong function backend.
+
+## 5. Bài học & Ghi chú (Lessons Learned)
+* **Kiểm tra Schema:** Luôn dùng tool (hoặc `view_code_item`) để xác nhận chính xác tên cột trong Model (ví dụ: `registered_by_user_id`) trước khi viết query phức tạp.
+* **Frontend-Backend Contract:** Cần định nghĩa Schema output thống nhất trước khi code để tránh lỗi mismatch (`count` vs `total`).
+* **Timezone & Null Safety:** Khi so sánh ngày tháng (Overdue check), bắt buộc phải handle Timezone và check `NULL` cho các trường optional để tránh lỗi 500 Runtime.
+* **Python Imports:** Tránh import module bên trong function nếu module đó đã được import ở đầu file để tránh shadowing và conflict không đáng có.
 
 # <a id="03122025-timezone-fix-estimated-datetime"></a> 03/12/2025 🕐 Timezone Fix: Estimated DateTime Form Submission
 **Version:** v1.14.2 | **Tags:** #bugfix, #timezone, #backend, #critical
