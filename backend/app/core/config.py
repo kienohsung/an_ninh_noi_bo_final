@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     GSHEETS_SHEET_NAME: str = "Trang tính1"
 
     class Config:
-        env_file = os.path.join(os.path.dirname(__file__), "..", ".env")
+        env_file = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
         env_file_encoding = "utf-8"
 
 settings = Settings()

@@ -2,13 +2,9 @@ from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.core.config import settings
+from app.utils.time_utils import get_local_time
 import pytz
 from datetime import datetime
-
-def get_local_time():
-    """Returns the current time in the timezone specified in settings."""
-    tz = pytz.timezone(settings.TZ)
-    return datetime.now(tz)
 
 class User(Base):
     __tablename__ = "users"
@@ -23,3 +19,4 @@ class User(Base):
 
     # Relationships using String References to avoid Circular Imports
     guests = relationship("Guest", back_populates="registered_by", foreign_keys="[Guest.registered_by_user_id]")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")

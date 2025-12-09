@@ -177,17 +177,18 @@ def delete_old_pending_guests(db: Session = Depends(get_db)):
     """
     Xóa các khách đăng ký cũ với điều kiện:
     - Trạng thái: pending (chờ vào)
-    - Ngày đăng ký (created_at) từ ngày hôm qua hoặc cũ hơn
     - Ngày vào dự kiến (estimated_datetime) từ ngày hôm qua hoặc cũ hơn
+    
+    Hành động: Đánh dấu là 'no_show' và tạo thông báo cho người đăng ký.
     """
     from ..modules.guest.service import guest_service
     try:
-        deleted_count = guest_service.delete_old_pending_guests(db)
-        if deleted_count == 0:
-            return {"ok": True, "message": "Không có dữ liệu cũ để xóa.", "deleted_count": 0}
+        processed_count = guest_service.process_no_show_guests(db)
+        if processed_count == 0:
+            return {"ok": True, "message": "Không có khách quá hạn cần xử lý.", "count": 0}
         
-        logger.info(f"Đã xóa {deleted_count} khách đăng ký cũ (pending, created < today, estimated < today)")
-        return {"ok": True, "message": f"Đã xóa {deleted_count} khách đăng ký cũ.", "deleted_count": deleted_count}
+        logger.info(f"Đã xử lý {processed_count} khách no-show.")
+        return {"ok": True, "message": f"Đã đánh dấu no-show {processed_count} khách.", "count": processed_count}
     
     except Exception as e:
         logger.error(f"Lỗi khi xóa dữ liệu khách cũ: {e}", exc_info=True)

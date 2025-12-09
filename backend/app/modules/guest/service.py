@@ -260,31 +260,105 @@ class GuestService:
         }
     
     @staticmethod
-    def delete_old_pending_guests(db: Session) -> int:
+    def process_no_show_guests(db: Session) -> int:
         """
-        Delete old pending guests.
+        Mark old pending guests as 'no_show' and notify users.
+        Condition: status='pending' AND estimated_datetime < today_start.
         """
+        from app.modules.notification.model import Notification # Import here to avoid circular
+        import itertools
+
         tz = pytz.timezone(config.settings.TZ)
-        today_start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        now_aware = datetime.now(tz)
+        today_start_aware = now_aware.replace(hour=0, minute=0, second=0, microsecond=0)
         
-        old_guests = db.query(models.Guest).filter(
+        # Determine strict today_start for comparison
+        # Note: If DB stores naive (implicit local), we might need naive.
+        # But assuming SQLAlchemy + current setup handles aware datetimes or strips them consistently.
+        # We will try with aware first, if error, we fallback or just use what works for this stack.
+        # Ideally, we rely on the fact that created_at is aware-like (from get_local_time).
+        
+        # However, to be absolutely safe against "TypeError: can't compare offset-naive and offset-aware":
+        # We'll fetch candidates first, then filter in Python if we suspect DB issues, 
+        # OR just ensure we pass a compatible type to the query.
+        
+        # Robust strategy: 
+        # 1. Fetch all pending guests with estimated_datetime IS NOT NULL
+        # 2. Filter in memory (it's a background job, performance hit acceptable for << 10k items)
+        #    to avoid SQL dialect timezone hell.
+        
+        potential_guests = db.query(models.Guest).filter(
             models.Guest.status == "pending",
-            models.Guest.created_at < today_start,
-            models.Guest.estimated_datetime < today_start
-        ).options(joinedload(models.Guest.images)).all()
+            models.Guest.estimated_datetime != None
+        ).all()
         
+        old_guests = []
+        for g in potential_guests:
+            g_time = g.estimated_datetime
+            if not g_time: 
+                continue
+                
+            # Normalize g_time to aware if it is naive (assume local TZ)
+            if g_time.tzinfo is None:
+                g_time = tz.localize(g_time)
+            
+            # Compare
+            if g_time < today_start_aware:
+                old_guests.append(g)
+
         if not old_guests:
             return 0
         
-        deleted_count = 0
+        count = len(old_guests)
+        logger.info(f"[no_show] Found {count} guests to mark as no-show.")
+
+        # 2. Update status to 'no_show'
         for guest in old_guests:
-            for image in guest.images:
-                GuestService._archive_image(image.image_path)
-            db.delete(guest)
-            deleted_count += 1
+            guest.status = "no_show"
         
+        # 3. Group by user to send ONE notification per user
+        # Sort first for itertools.groupby
+        old_guests.sort(key=lambda g: g.registered_by_user_id if g.registered_by_user_id else 0)
+        
+        notifications_to_add = []
+        # Filter out None user_ids
+        valid_guests = [g for g in old_guests if g.registered_by_user_id]
+        
+        for user_id, user_guests in itertools.groupby(valid_guests, key=lambda g: g.registered_by_user_id):
+            guests_list = list(user_guests)
+            
+            # Construct message
+            msg_lines = ["⚠️ Bạn có khách đăng ký nhưng không đến (quá hạn):"]
+            for g in guests_list:
+                # Format time for display
+                est_str = "???"
+                if g.estimated_datetime:
+                     # render naive or aware correctly
+                     dt_val = g.estimated_datetime
+                     if dt_val.tzinfo is None:
+                         # assume it was local
+                         est_str = dt_val.strftime("%d/%m/%Y %H:%M")
+                     else:
+                         est_str = dt_val.astimezone(tz).strftime("%d/%m/%Y %H:%M")
+
+                msg_lines.append(f"- {g.full_name} (Dự kiến: {est_str})")
+            
+            msg_lines.append("")
+            msg_lines.append("Admin phải check và xóa những khách không vào hàng ngày, vui lòng cân nhắc đăng ký khách thực sự vào :( ")
+            
+            notif = Notification(
+                user_id=user_id,
+                title="⚠️ Cảnh báo: Khách đăng ký nhưng không tới",
+                message="\n".join(msg_lines),
+                is_read=False, 
+                created_at=models.get_local_time()
+            )
+            notifications_to_add.append(notif)
+            
+        db.add_all(notifications_to_add)
         db.commit()
-        return deleted_count
+        
+        return count
 
     @staticmethod
     def confirm_check_in(

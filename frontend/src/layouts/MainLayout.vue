@@ -85,6 +85,27 @@
     <q-page-container>
       <router-view/>
     </q-page-container>
+
+    <!-- Notification Dialog -->
+    <q-dialog v-model="notificationDialog" persistent>
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6 text-negative">⚠️ Nhắc nhở quan trọng</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <div v-for="notif in notificationList" :key="notif.id" class="q-mb-md">
+            <div class="text-weight-bold">{{ notif.title }}</div>
+            <div style="white-space: pre-line;">{{ notif.message }}</div>
+            <q-separator class="q-my-sm" />
+          </div>
+        </q-card-section>
+
+        <q-card-actions align="right">
+          <q-btn flat label="Đã hiểu" color="primary" @click="confirmRead" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-layout>
 </template>
 
@@ -92,17 +113,63 @@
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import api from '../api'
 
 const auth = useAuthStore()
 const router = useRouter()
 const leftDrawerOpen = ref(true)
 
-// Auto-hide menu after 5 seconds
-onMounted(() => {
+// Notifications
+const notificationDialog = ref(false)
+const notificationList = ref([])
+
+onMounted(async () => {
+  // Auto-hide menu
   setTimeout(() => {
     leftDrawerOpen.value = false
   }, 5000)
+
+  // Initial check
+  if (auth.isAuthenticated) {
+    fetchNotifications()
+  }
 })
+
+// Watch for login
+import { watch } from 'vue'
+watch(() => auth.isAuthenticated, (newVal) => {
+  if (newVal) {
+    fetchNotifications()
+  }
+})
+
+async function fetchNotifications() {
+  try {
+    const res = await api.get('/notifications/unread')
+    if (res.data && res.data.length > 0) {
+      notificationList.value = res.data
+      notificationDialog.value = true
+    }
+  } catch (e) {
+    console.error("Failed to fetch notifications", e)
+  }
+}
+
+
+async function confirmRead() {
+  try {
+    // Mark all as read
+    // Using Promise.all to run in parallel
+    const promises = notificationList.value.map(n => api.post(`/notifications/${n.id}/read`))
+    await Promise.all(promises)
+    
+    // Close
+    notificationDialog.value = false
+    notificationList.value = []
+  } catch (e) {
+    console.error("Failed to mark notifications as read", e)
+  }
+}
 
 function logout () {
   auth.logout()

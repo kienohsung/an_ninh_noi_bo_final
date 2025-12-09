@@ -43,7 +43,9 @@ from .routers.assets import router as assets_router
 from .routers.admin import router as admin_router
 from .routers.print_tracking import router as print_tracking_router
 from .routers.security_events import router as security_events_router
+from .routers.security_events import router as security_events_router
 from .routers.purchasing import router as purchasing_router
+from .routers.notifications import router as notifications_router
 
 app = FastAPI(
     title="Ứng dụng an ninh nội bộ - Local Security App",
@@ -94,6 +96,7 @@ app.include_router(admin_router)
 app.include_router(print_tracking_router)
 app.include_router(security_events_router)
 app.include_router(purchasing_router)
+app.include_router(notifications_router)
 
 # Mount static files
 app.mount(f"/{os.path.basename(settings.UPLOAD_DIR)}", StaticFiles(directory=settings.UPLOAD_DIR), name="static")
@@ -135,12 +138,32 @@ def on_startup():
         finally:
              db.close()
 
+    # Job cho No-Show Guest (23:55 daily)
+    def process_no_show_guests_job():
+        logging.info("[no_show] Job started: Processing no-show guests...")
+        db = SessionLocal()
+        try:
+            from app.modules.guest.service import guest_service
+            count = guest_service.process_no_show_guests(db)
+            if count > 0:
+                logging.info(f"[no_show] Job finished: Marked {count} guest(s) as no-show.")
+            else:
+                logging.info("[no_show] Job finished: No no-show guests found.")
+        except Exception as e:
+             logging.error(f"[no_show] Job failed: {e}", exc_info=True)
+        finally:
+             db.close()
+
     # Chạy ngay khi startup
     try:
         create_daily_guest_entries()
         logging.info("[long_term] Startup run completed.")
+        
+        # Chạy check no-show ngay khi start phòng trường hợp đêm qua server tắt
+        process_no_show_guests_job()
+        logging.info("[no_show] Startup run completed.")
     except Exception as e:
-        logging.error(f"[long_term] Startup run failed: {e}", exc_info=True)
+        logging.error(f"[startup] Startup run failed: {e}", exc_info=True)
 
     # Bắt đầu scheduler
     try:
@@ -166,11 +189,24 @@ def on_startup():
             max_instances=1,
             misfire_grace_time=10,
         )
+        # Job No-Show Guests (23:55)
+        sched.add_job(
+            process_no_show_guests_job,
+            trigger='cron',
+            hour=0,
+            minute=0,
+            id="process_no_show_guests_job",
+            name="Process no-show guests daily",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=60,
+        )
         sched.start()
         app.state.scheduler = sched
-        logging.info(f"[long_term] Scheduler started: every 30 minutes (TZ={settings.TZ}).")
+        logging.info(f"[scheduler] Scheduler started (TZ={settings.TZ}).")
     except Exception as e:
-        logging.error(f"[long_term] Could not start the scheduler: {e}", exc_info=True)
+        logging.error(f"[scheduler] Could not start the scheduler: {e}", exc_info=True)
 
 
 @app.on_event("shutdown")

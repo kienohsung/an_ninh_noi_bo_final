@@ -5,6 +5,7 @@
 
 from app.modules.user.model import User, get_local_time
 from app.modules.guest.model import Guest, GuestImage, LongTermGuest
+from app.modules.notification.model import Notification
 from app.modules.asset.model import (
     AssetLog, AssetImage, 
     ASSET_STATUS_PENDING_OUT, ASSET_STATUS_CHECKED_OUT, ASSET_STATUS_RETURNED

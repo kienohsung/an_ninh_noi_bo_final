@@ -87,10 +87,4 @@ def get_db() -> Generator:
     finally:
         db.close()
 
-# Import all models to register them with Base.metadata (avoids circular imports)
-# This ensures Base.metadata.create_all(bind=engine) works correctly.
-from app.modules.user.model import User
-from app.modules.guest.model import Guest, GuestImage, LongTermGuest
-from app.modules.asset.model import AssetLog, AssetImage
-from app.modules.supplier.model import Supplier, SupplierPlate
-from app.modules.purchasing.model import PurchasingLog, PurchasingImage
+# Imports removed to adhere to architecture standards. Models are registered via app.models import in main.py
