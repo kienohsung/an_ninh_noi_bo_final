@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         "http://192.168.223.176:5174",
         "http://192.168.223.176:5175"
     ]
-    UPLOAD_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
+    UPLOAD_DIR: str = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
     TZ: str = "Asia/Bangkok"
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"

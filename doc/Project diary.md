@@ -66,10 +66,49 @@ Khi đọc file này để phân tích hoặc thêm nhật ký mới, BẮT BU�
 16. [04/12/2025 - Report & Asset Control Analytics Module](#04122025-report-asset-analytics-module)
 17. [08/12/2025 - Module Quản lý Mua bán & System Fixes](#08122025-purchasing-module-system-fixes)
 18. [09/12/2025 - Backend Modular Refactoring & Critical Frontend Fixes](#09122025-backend-modular-refactoring)
+19. [10/12/2025 - Laptop Warning Feature & CSS Animation Fixes](#10122025-laptop-warning-feature--css-animation)
 
 
 ---
 ---
+
+# <a id="10122025-laptop-warning-feature--css-animation"></a> 10/12/2025 💻 Laptop Warning Feature & CSS Animation Fixes
+**Version:** v2.0.1 | **Tags:** #ui, #css, #frontend, #animation, #bugfix
+
+## 1. Tổng quan (Overview)
+* **Mục tiêu:** Triển khai tính năng cảnh báo (hiệu ứng nhấp nháy, nền cam) cho khách mang Laptop tại trang Guard Gate, đồng bộ giao diện với trang Đăng ký.
+* **Trạng thái:** ✅ Hoàn thành
+
+## 2. Vấn đề & Yêu cầu (Problem & Requirements)
+* **Bối cảnh:**
+    * Bảo vệ cần nhận diện nhanh chóng khách mang thiết bị tin học (Laptop) để kiểm soát an ninh.
+    * Các phương pháp CSS thông thường (`row-class`, `style` binding) không hoạt động do cơ chế Scoped CSS và độ ưu tiên (Specificity) cao của Quasar Framework.
+* **Yêu cầu cụ thể:**
+    * Nếu cột "Chi tiết" chứa từ khóa "laptop": Dòng đó phải nhấp nháy, nền màu cam nhạt (#ffe0b2), chữ đỏ đậm.
+    * Hiệu ứng phải giống hệt banner cảnh báo bên `RegisterGuest.vue`.
+    * Khắc phục lỗi 500 Server Error do sai cú pháp HTML template.
+
+## 3. Giải pháp Kỹ thuật (Technical Solution)
+* **Kiến trúc/Logic:** Chuyển từ chiến lược **Top-down** (style từ dòng xuống cột) sang **Bottom-up** (đánh dấu cột để style ngược lên dòng) sử dụng CSS Modern Selector.
+* **Frontend (`GuardGate.vue`):**
+    * **Cell Marking:** Sử dụng `<template #body-cell-reason>` để inject class `.laptop-cell-highlight` vào ô dữ liệu nếu phát hiện từ khóa "laptop".
+    * **CSS Selector `:has()`:** Sử dụng `tr:has(.laptop-cell-highlight)` để apply style cho toàn bộ dòng cha khi con nó có class đánh dấu. Cách này bypass được các hạn chế của Quasar `row-class`.
+    * **Animation:** Copy chính xác `@keyframes blink` từ `RegisterGuest.vue` để đảm bảo đồng bộ trải nghiệm.
+* **Frontend (`RegisterGuest.vue`):**
+    * Tinh chỉnh lại watcher và logic toggle để đảm bảo tính nhất quán.
+
+## 4. Kết quả & Cập nhật (Impact & Metrics)
+* **Files Modified:** `frontend/src/pages/GuardGate.vue`, `frontend/src/pages/RegisterGuest.vue`.
+* **Tính năng mới:**
+    * Hàng chờ tại cổng bảo vệ sẽ tự động nhấp nháy cảnh báo nếu khách có mang theo Laptop.
+* **Sửa lỗi (Bug Fixes):**
+    * **Critical Fix:** Khắc phục lỗi **500 Internal Server Error** (White Screen) do thẻ đóng `</style>` bị thừa khi chỉnh sửa template.
+    * **CSS Fix:** Giải quyết triệt để vấn đề CSS không ăn (do Quasar override) bằng `!important` và selector `:has()`.
+
+## 5. Bài học & Ghi chú (Lessons Learned)
+* **Don't Fight The Framework:** Khi `row-class` hoặc `row-style` của UI Framework (Quasar/Vuetify) không hoạt động như ý do Scoped Styles, hãy dùng CSS standard (`:has()`, `:deep()`) thay vì cố debug logic JS.
+* **HTML Syntax Check:** Cẩn trọng tuyệt đối với các thẻ đóng/mở (`<style>`, `<template>`) khi replace code block lớn, vì lỗi cú pháp HTML có thể gây crash toàn bộ Page (500 Error).
+* **Code Consistency:** Khi yêu cầu là "giống tính năng X", hãy tìm và copy chính xác đoạn code style/animation của X thay vì viết lại từ đầu để tiết kiệm thời gian debug.
 
 # <a id="09122025-backend-modular-refactoring"></a> 09/12/2025 🛠️ Backend Modular Refactoring & Critical Frontend Fixes
 **Version:** v2.0.0 | **Tags:** #refactor, #backend, #frontend, #bugfix, #architecture

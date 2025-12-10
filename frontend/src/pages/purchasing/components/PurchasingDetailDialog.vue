@@ -12,8 +12,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
-const carouselSlide = ref(0)
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 
 // Status helpers
 const statusMap = {
@@ -30,7 +29,7 @@ const statusInfo = computed(() => {
 })
 
 const requestImages = computed(() => {
-    return props.item?.images?.filter(img => !img.image_type || img.image_type === 'request') || []
+    return props.item?.images?.filter(img => !img.image_type || img.image_type !== 'delivery') || []
 })
 
 const deliveryImages = computed(() => {
@@ -58,6 +57,15 @@ function formatPrice(p) {
   if (!p) return '0 ₫'
   return p.toLocaleString('vi-VN') + ' ₫'
 }
+
+const carouselSlide = ref(0)
+/* Reset slide when item changes */
+import { watch } from 'vue'
+watch(() => props.item, () => {
+  carouselSlide.value = 0
+})
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function openImageFullscreen(img) {
   const imgUrl = getImageUrl(img.image_path)

@@ -117,7 +117,7 @@ async function onSubmit() {
         for (const file of imageFiles.value) {
           const formData = new FormData()
           formData.append('file', file)
-          await api.post(`/purchasing/${props.editItem.id}/upload-image`, formData)
+          await api.post(`/purchasing/${props.editItem.id}/images?type=request`, formData)
         }
       }
       
@@ -132,7 +132,7 @@ async function onSubmit() {
         for (const file of imageFiles.value) {
           const formData = new FormData()
           formData.append('file', file)
-          await api.post(`/purchasing/${newId}/upload-image`, formData)
+          await api.post(`/purchasing/${newId}/images?type=request`, formData)
         }
         $q.notify({ type: 'positive', message: 'Tạo phiếu thành công!' })
       } catch (uploadError) {

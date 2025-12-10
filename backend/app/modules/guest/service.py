@@ -885,6 +885,24 @@ class LongTermGuestService:
                 # Use the original registrant's ID
                 registrant_id = lt_guest.registered_by_user_id
                 
+                # Calculate new estimated_datetime for today
+                estimated_dt = None
+                if lt_guest.estimated_datetime:
+                     try:
+                         # Combine today's date with the time from the original estimated_datetime
+                         # We need to handle timezone awareness carefully.
+                         # lt_guest.estimated_datetime might be naive or aware.
+                         
+                         original_time = lt_guest.estimated_datetime.time()
+                         # Combine with 'today' which is naive date, then localize
+                         dt_naive = datetime.combine(today, original_time)
+                         estimated_dt = pytz.timezone(tz_name).localize(dt_naive)
+                     except Exception as e:
+                         # Fallback if something goes wrong (e.g., timezone issues)
+                         # Just use the original (will be past) or None? 
+                         # Better to force it to be "today" even if time is 00:00
+                         estimated_dt = datetime.combine(today, time(8, 0), tzinfo=pytz.timezone(tz_name))
+
                 new_guest = Guest(
                     full_name=lt_guest.full_name,
                     id_card_number=lt_guest.id_card_number,
@@ -892,7 +910,7 @@ class LongTermGuestService:
                     reason=lt_guest.reason or "Khách đăng ký dài hạn",
                     license_plate=lt_guest.license_plate,
                     supplier_name=lt_guest.supplier_name,
-                    estimated_datetime=lt_guest.estimated_datetime,
+                    estimated_datetime=estimated_dt,
                     status="pending",
                     registered_by_user_id=registrant_id,
                     created_at=get_local_time()

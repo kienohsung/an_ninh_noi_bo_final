@@ -46,7 +46,8 @@
         :loading="loading"
         :row-class="(row) => {
           const overdue = isOverdue(row);
-          return overdue ? 'bg-red-1 text-black blink-warning' : '';
+          if (overdue) return 'bg-red-1 text-black blink-warning';
+          return '';
         }"
       >
         <!-- BẮT ĐẦU SỬA LỖI: Dòng comment lỗi đã bị xóa hoàn toàn khỏi đây -->
@@ -87,6 +88,19 @@
             >
               Đang ở trong
             </q-chip>
+          </q-td>
+        </template>
+        
+        <!-- LAPTOP WARNING: Custom template for reason column -->
+        <template #body-cell-reason="props">
+          <q-td 
+            :props="props" 
+            :class="String(props.row.reason || '').toLowerCase().includes('laptop') ? 'laptop-cell-highlight' : ''"
+          >
+            <!-- Show the reason text with bold style if contains laptop -->
+            <span :style="String(props.row.reason || '').toLowerCase().includes('laptop') ? 'font-weight: bold; color: #d32f2f;' : ''">
+              {{ props.value }}
+            </span>
           </q-td>
         </template>
         
@@ -800,21 +814,52 @@ onBeforeUnmount(() => {
 </script>
 
 <!-- BẮT ĐẦU NÂNG CẤP: Thêm CSS cho hiệu ứng nhấp nháy -->
-<style lang="scss" scoped>
-// Thêm một chút style để giao diện thoáng hơn
-.q-page {
-//  max-width: 1400px;
-  margin: 0 auto;
+
+
+<!-- Add global style for blinking effect to ensure it penetrates all scopes -->
+<style lang="scss">
+@keyframes blink-animation {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: #ffebee; } /* Light Red */
 }
 
-// CSS Animation cho cảnh báo quá hạn
-@keyframes blink-animation {
+/* Apply animation to TR and all its TD children */
+.blink-warning, 
+.blink-warning td {
+  animation: blink-animation 1s infinite alternate !important;
+  color: #c62828 !important; /* Red 800 */
+  font-weight: bold !important;
+}
+
+/* LAPTOP BADGE ANIMATION */
+@keyframes laptop-blink {
+  0%, 100% { 
+    background-color: #ff5722 !important;
+    transform: scale(1);
+  }
+  50% { 
+    background-color: #ff9800 !important;
+    transform: scale(1.1);
+  }
+}
+
+/* LAPTOP ROW HIGHLIGHT - Same as RegisterGuest warning */
+@keyframes blink {
   0% { opacity: 1; }
-  50% { opacity: 0.6; }
+  50% { opacity: 0.4; }
   100% { opacity: 1; }
 }
-.blink-warning {
-  animation: blink-animation 1.5s infinite;
+
+/* When ANY cell has laptop-cell-highlight, the ENTIRE row blinks */
+tr:has(.laptop-cell-highlight) {
+  background-color: #ffe0b2 !important;
+  animation: blink 1s infinite !important;
+}
+
+tr:has(.laptop-cell-highlight) td {
+  font-weight: bold !important;
+  border-top: 2px solid #ff5722 !important;
+  border-bottom: 2px solid #ff5722 !important;
 }
 </style>
 <!-- KẾT THÚC NÂNG CẤP -->

@@ -84,7 +84,7 @@ def delete_purchasing(
 @router.post("/{purchasing_id}/images", response_model=schemas.PurchasingImageRead)
 async def upload_purchasing_image(
     purchasing_id: int,
-    type: str = Query(..., regex="^(request|quote|invoice|other)$"),
+    type: str = Query(..., regex="^(request|quote|invoice|other|delivery)$"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)

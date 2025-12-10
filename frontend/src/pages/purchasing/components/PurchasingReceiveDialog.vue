@@ -47,7 +47,7 @@ async function onSubmit() {
       const formData = new FormData()
       formData.append('file', file)
       // Upload with type=delivery
-      await api.post(`/purchasing/${props.item.id}/upload-image?type=delivery`, formData, {
+      await api.post(`/purchasing/${props.item.id}/images?type=delivery`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }

@@ -3,29 +3,16 @@
 <template>
   <q-page padding>
     <q-card>
-      <q-card-section class="row items-center justify-between">
-        <div class="text-subtitle1">Đăng ký khách</div>
-        <div>
-          <q-btn 
-            icon="qr_code_scanner" 
-            label="Quét CCCD" 
-            color="secondary" 
-            @click="triggerCccdInput"
-            :loading="isScanning"
-          >
-            <q-tooltip>Tải ảnh CCCD để điền thông tin tự động</q-tooltip>
-          </q-btn>
-          <input 
-            type="file" 
-            ref="cccdInputRef" 
-            @change="handleCccdUpload" 
-            accept="image/*" 
-            multiple 
-            hidden 
-          />
-        </div>
-      </q-card-section>
+      <!-- REMOVED HEADER SECTION -->
       <q-card-section>
+          <!-- WARNING BANNER -->
+           <div class="q-mb-md text-center">
+               <div class="blinking-warning text-h6 text-red text-weight-bold q-pa-md" style="border: 2px dashed red; border-radius: 8px; background-color: #fff0f0;">
+                   CHÚ Ý: KHÁCH MANG LAPTOP VÀO PHẢI THÔNG BÁO VỚI IT, HOẶC GHI CHÚ VÀO MỤC CHI TIẾT.<br>
+                   KHÔNG THÔNG BÁO SẼ BỊ LIÊN ĐỚI KHI CÓ KHIẾU NẠI XẢY RA!
+               </div>
+           </div>
+
           <q-form @submit="onSubmit" class="q-gutter-y-md">
 
           <!-- SỬA ĐỔI: Gom nhóm các tùy chọn đăng ký đặc biệt -->
@@ -33,6 +20,28 @@
             <div class="row items-center q-gutter-x-md">
               <q-toggle v-model="isBulk" label="Đăng ký theo đoàn" />
               <q-toggle v-model="isLongTerm" label="Khách thường xuyên (dài hạn)" />
+              <q-toggle v-model="hasLaptop" color="red" label="Khách mang Laptop" />
+              <q-space />
+              <div>
+                  <q-btn 
+                    icon="qr_code_scanner" 
+                    label="Quét CCCD" 
+                    color="secondary" 
+                    @click="triggerCccdInput"
+                    :loading="isScanning"
+                    dense
+                  >
+                    <q-tooltip>Tải ảnh CCCD để điền thông tin tự động</q-tooltip>
+                  </q-btn>
+                  <input 
+                    type="file" 
+                    ref="cccdInputRef" 
+                    @change="handleCccdUpload" 
+                    accept="image/*" 
+                    multiple 
+                    hidden 
+                  />
+              </div>
             </div>
 
             <q-slide-transition>
@@ -338,6 +347,10 @@
             <q-td :props="props">
               <q-btn flat dense icon="edit" @click.stop="editRow(props.row)" :disable="auth.user?.role === 'staff' && props.row.status !== 'pending'">
                 <q-tooltip v-if="auth.user?.role === 'staff' && props.row.status !== 'pending'">Không thể sửa khi khách đã vào</q-tooltip>
+              </q-btn>
+              <!-- RE-REGISTER BUTTON -->
+              <q-btn flat dense icon="history" color="info" @click.stop="reRegister(props.row)">
+                <q-tooltip>Đăng ký lại (sử dụng thông tin cũ)</q-tooltip>
               </q-btn>
               <q-btn flat dense icon="delete" color="negative" @click.stop="delRow(props.row)" :disable="auth.user?.role === 'staff' && props.row.status !== 'pending'">
                 <q-tooltip v-if="auth.user?.role === 'staff' && props.row.status !== 'pending'">Không thể xóa khi khách đã vào</q-tooltip>
@@ -756,6 +769,20 @@ function setEstimatedDatetime() {
   }
 }
 
+
+const hasLaptop = ref(false);
+
+watch(hasLaptop, (val) => {
+  const laptopText = " - Khách mang Laptop";
+  if (val) {
+    if (!form.reason.includes(laptopText)) {
+      form.reason += laptopText;
+    }
+  } else {
+    form.reason = form.reason.replace(laptopText, "");
+  }
+});
+
 watch(isLongTerm, (newVal) => {
   if (newVal) {
     imageFiles.value = [];
@@ -1120,6 +1147,36 @@ async function executeExport() {
   }
 }
 
+function reRegister(row) {
+  // Reset form first
+  resetForm();
+  
+  // Populate form with row data
+  form.full_name = row.full_name;
+  form.id_card_number = row.id_card_number;
+  form.supplier_name = row.supplier_name;
+  form.license_plate = row.license_plate;
+  form.reason = row.reason;
+  form.company = row.company;
+  
+  // Set estimated_datetime to now
+  const now = new Date();
+  form.estimated_datetime = now.toISOString();
+  
+  // Ensure single guest mode
+  isBulk.value = false;
+  isLongTerm.value = false;
+  
+  // Validates user feedback
+  $q.notify({
+     type: 'info',
+     message: `Đã nạp thông tin của ${row.full_name}. Vui lòng kiểm tra và bấm Đăng ký.` 
+  });
+  
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function clearData() {
   $q.dialog({
     title: 'Xác nhận xóa TOÀN BỘ DỮ LIỆU',
@@ -1192,3 +1249,16 @@ onMounted(() => {
   loadSuggestions()
 })
 </script>
+
+<style scoped>
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.blinking-warning {
+  animation: blink 1s infinite;
+}
+</style>
+

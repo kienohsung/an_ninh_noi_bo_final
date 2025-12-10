@@ -27,5 +27,13 @@ backend/telegram_last_message_id.txt
 # Uploads
 backend/uploads/
 
+# Archived files
+_archived/
+
 # Documentation
 doc/
+/doc
+
+# Refactoring plans
+plan_refactoring/
+/backend/app/uploads
