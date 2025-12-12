@@ -1,7 +1,44 @@
 # File: backend/app/schemas.py
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime, date
+
+# ---------- NORMALIZATION SCHEMAS ----------
+# Đặt trực tiếp ở đây để tránh circular import
+class SupplierVariant(BaseModel):
+    """Một biến thể tên nhà cung cấp"""
+    name: str
+    count: int
+    tables: List[str]
+
+class SupplierGroup(BaseModel):
+    """Một nhóm các tên tương tự"""
+    variants: List['SupplierVariant']
+    suggested_name: str
+    total_records: int
+    similarity_score: float
+
+class NormalizationAnalysis(BaseModel):
+    """Kết quả phân tích toàn bộ"""
+    groups: List[SupplierGroup]
+    total_groups: int
+
+class NormalizationRequest(BaseModel):
+    """Request để thực hiện normalization"""
+    mappings: Dict[str, str]
+
+class NormalizationPreview(BaseModel):
+    """Preview số lượng bản ghi sẽ bị ảnh hưởng"""
+    guests: int
+    long_term_guests: int
+    purchasing_log: int
+    total: int
+
+class NormalizationResult(BaseModel):
+    """Kết quả sau khi thực hiện normalization"""
+    success: bool
+    updated_records: Dict[str, int]
+    errors: List[str] = []
 
 # ---------- AUTH ----------
 class Token(BaseModel):

@@ -15,7 +15,10 @@ from app.modules.asset.schema import (
 )
 from app.modules.supplier.schema import (
     SupplierBase, SupplierCreate, SupplierUpdate, 
-    SupplierPlateBase, SupplierPlateCreate, SupplierPlateRead, SupplierRead
+    SupplierPlateBase, SupplierPlateCreate, SupplierPlateRead, SupplierRead,
+    # Normalization schemas
+    SupplierVariant, SupplierGroup, NormalizationAnalysis,
+    NormalizationRequest, NormalizationPreview, NormalizationResult
 )
 from app.modules.report.schema import (
     MonthlyDataPoint, DailyTrendPoint, SupplierStat, StatusBreakdown, 
